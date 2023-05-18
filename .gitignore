@@ -56,3 +56,6 @@ get_*.ipynb
 
 # Built Visual Studio Code Extensions
 *.vsix
+
+# Log
+log/

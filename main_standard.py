@@ -9,7 +9,7 @@ from torch.nn.parallel import DistributedDataParallel
 from utils.experiman import manager
 from data import *
 from models import get_model
-from losses import GWLoss, CharbonnierLoss, L1_with_CoBi
+from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss
 from trainers import StandardTrainer, LoopConfig
 from utils.misc import parse
 from utils.optim import get_optim
@@ -43,6 +43,7 @@ def add_parser_argument(parser):
     parser.add_argument('--charbonnier', action='store_true')
     parser.add_argument('--cobi', action='store_true')
     parser.add_argument('--gw_loss_weight', type=float)
+    parser.add_argument('--adaptive', action='store_true')
     ## ==================== Optimization ======================
     parser.add_argument('--epoch', default=200, type=int)
     parser.add_argument('--num_iters_train', type=int,
@@ -152,7 +153,10 @@ def main():
     else:
         criterions['reconstruction'] = nn.MSELoss()
     if opt.gw_loss_weight:
-        criterions['gw'] = GWLoss()
+        if opt.adaptive:
+            criterions['gw'] = Adaptive_GWLoss()
+        else:
+            criterions['gw'] = GWLoss()
     print(criterions)
     for criterion in criterions.values():
         criterion.to(device)

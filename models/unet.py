@@ -42,7 +42,9 @@ class ResBlock2(nn.Module):
         out = out1 + out2
         return out
 
-
+'''
+something wrong with [inplace=True]
+'''
 class PreActResBlock4(nn.Module):
 
     def __init__(self, in_channel, out_channel, strides=1, first=False):
@@ -65,6 +67,47 @@ class PreActResBlock4(nn.Module):
             self.shortcut = nn.Identity()
         self.block2 = nn.Sequential(
             nn.LeakyReLU(inplace=True),
+            nn.Conv2d(out_channel, out_channel, kernel_size=3,
+                      stride=strides, padding=1),
+            nn.LeakyReLU(inplace=True),
+            nn.Conv2d(out_channel, out_channel, kernel_size=3,
+                      stride=strides, padding=1),
+        )
+
+    def forward(self, x):
+        out1 = self.block1(x)
+        res1 = self.shortcut(x)
+        x = out1 + res1
+        out2 = self.block2(x)
+        res2 = x
+        return out2 + res2
+
+
+'''
+start with [inplace=False] for some blocks
+'''
+class PreActResBlock4_new(nn.Module):
+
+    def __init__(self, in_channel, out_channel, strides=1, first=False):
+        super().__init__()
+        self.strides = strides
+        self.in_channel = in_channel
+        self.out_channel = out_channel
+        self.block1 = nn.Sequential(
+            nn.LeakyReLU(inplace=False) if not first else nn.Identity(),
+            nn.Conv2d(in_channel, out_channel, kernel_size=3,
+                      stride=strides, padding=1),
+            nn.LeakyReLU(inplace=True),
+            nn.Conv2d(out_channel, out_channel, kernel_size=3,
+                      stride=strides, padding=1),
+        )
+        if in_channel != out_channel:
+            self.shortcut = nn.Conv2d(in_channel, out_channel,
+                                      kernel_size=1, stride=strides, padding=0)
+        else:
+            self.shortcut = nn.Identity()
+        self.block2 = nn.Sequential(
+            nn.LeakyReLU(inplace=False),
             nn.Conv2d(out_channel, out_channel, kernel_size=3,
                       stride=strides, padding=1),
             nn.LeakyReLU(inplace=True),
@@ -137,6 +180,8 @@ class UNet(nn.Module):
         conv = default_conv
         if conv_block == 'pares4':
             ConvBlock = PreActResBlock4
+        elif conv_block == 'pares4_new':
+            ConvBlock = PreActResBlock4_new
         elif conv_block == 'pares4_bn':
             ConvBlock = PreActBNResBlock4
         elif conv_block == 'res2':

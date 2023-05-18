@@ -1,6 +1,6 @@
 trap "exit" INT
-LOG_DIR="$HOME/log/super_resolution/mobile_sr"
-DATA_DIR="$HOME/data"
+LOG_DIR="/data1/zq/mobile_sr/log/super_resolution/mobile_sr"
+DATA_DIR="/home/xiaoyao/data"
 # MODEL_DIR="$HOME/model"
 NUM_WORKERS=8
 
