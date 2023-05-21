@@ -9,11 +9,12 @@ from torch.nn.parallel import DistributedDataParallel
 from utils.experiman import manager
 from data import *
 from models import get_model
-from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss
+from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss
 from trainers import StandardTrainer, LoopConfig
 from utils.misc import parse
 from utils.optim import get_optim
 import utils.metrics
+import datetime
 
 
 def add_parser_argument(parser):
@@ -44,6 +45,7 @@ def add_parser_argument(parser):
     parser.add_argument('--cobi', action='store_true')
     parser.add_argument('--gw_loss_weight', type=float)
     parser.add_argument('--adaptive', action='store_true')
+    parser.add_argument('--lapgw_loss_weight', type=float)
     ## ==================== Optimization ======================
     parser.add_argument('--epoch', default=200, type=int)
     parser.add_argument('--num_iters_train', type=int,
@@ -92,7 +94,7 @@ def main():
     manager.setup(opt, rank=rank, world_size=world_size,
                   third_party_tools=('tensorboard',))
     if world_size > 1:
-        dist.init_process_group("nccl")
+        dist.init_process_group("nccl", timeout=datetime.timedelta(seconds=10800))
         if rank == 0:
             t = torch.tensor([opt.run_number + .1], device=device)
         else:
@@ -157,6 +159,8 @@ def main():
             criterions['gw'] = Adaptive_GWLoss()
         else:
             criterions['gw'] = GWLoss()
+    if opt.lapgw_loss_weight:
+        criterions['lapgw'] = LapGWLoss()
     print(criterions)
     for criterion in criterions.values():
         criterion.to(device)

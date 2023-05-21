@@ -11,6 +11,7 @@ from trainers import StandardTester, LoopConfig
 from utils.misc import parse
 import utils.metrics
 from main_standard import add_parser_argument
+import datetime
 
 
 def add_parser_argument_eval(parser):
@@ -34,7 +35,7 @@ def main():
     manager.setup(opt, rank=rank, world_size=world_size,
                   third_party_tools=('tensorboard',))
     if world_size > 1:
-        dist.init_process_group("nccl")
+        dist.init_process_group("nccl", timeout=datetime.timedelta(seconds=10800))
         if rank == 0:
             t = torch.tensor([opt.run_number + .1], device=device)
         else:
