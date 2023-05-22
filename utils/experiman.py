@@ -268,7 +268,7 @@ class ExperiMan(object):
             self._setup_uid()
             self._setup_dirs()
             self._setup_logger()
-            self._backup_code()
+            # self._backup_code()
             self._setup_third_party_tools()
             self._export_arguments()
         else:
