@@ -19,59 +19,133 @@ from models.common import default_conv, ResBlock, Upsampler, TSAFusion
 from functools import partial
 
 
-class SELayer(nn.Module):
-    def __init__(self, channel, reduction=16):
-        super(SELayer, self).__init__()
+# class FastLeFF(nn.Module):
+    
+#     def __init__(self, dim=32, hidden_dim=128, act_layer=nn.GELU,drop = 0.):
+#         super().__init__()
+
+#         from torch_dwconv import depthwise_conv2d, DepthwiseConv2d
+
+#         self.linear1 = nn.Sequential(nn.Linear(dim, hidden_dim),
+#                                 act_layer())
+#         self.dwconv = nn.Sequential(DepthwiseConv2d(hidden_dim, hidden_dim, kernel_size=3,stride=1,padding=1),
+#                         act_layer())
+#         self.linear2 = nn.Sequential(nn.Linear(hidden_dim, dim))
+#         self.dim = dim
+#         self.hidden_dim = hidden_dim
+
+#     def forward(self, x):
+#         # bs x hw x c
+#         bs, hw, c = x.size()
+#         hh = int(math.sqrt(hw))
+
+#         x = self.linear1(x)
+
+#         # spatial restore
+#         x = rearrange(x, ' b (h w) (c) -> b c h w ', h = hh, w = hh)
+#         # bs,hidden_dim,32x32
+
+#         x = self.dwconv(x)
+
+#         # flaten
+#         x = rearrange(x, ' b c h w -> b (h w) c', h = hh, w = hh)
+
+#         x = self.linear2(x)
+
+#         return x
+
+#     def flops(self, H, W):
+#         flops = 0
+#         # fc1
+#         flops += H*W*self.dim*self.hidden_dim 
+#         # dwconv
+#         flops += H*W*self.hidden_dim*3*3
+#         # fc2
+#         flops += H*W*self.hidden_dim*self.dim
+#         print("LeFF:{%.2f}"%(flops/1e9))
+#         return flops
+
+
+class eca_layer_1d(nn.Module):
+    """Constructs a ECA module.
+    Args:
+        channel: Number of channels of the input feature map
+        k_size: Adaptive selection of kernel size
+    """
+    def __init__(self, channel, k_size=3):
+        super(eca_layer_1d, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool1d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(channel, channel // reduction, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(channel // reduction, channel, bias=False),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):  # x: [B, N, C]
-        x = torch.transpose(x, 1, 2)  # [B, C, N]
-        b, c, _ = x.size()
-        y = self.avg_pool(x).view(b, c)
-        y = self.fc(y).view(b, c, 1)
-        x = x * y.expand_as(x)
-        x = torch.transpose(x, 1, 2)  # [B, N, C]
-        return x
-
-class SepConv2d(torch.nn.Module):
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 kernel_size,
-                 stride=1,
-                 padding=0,
-                 dilation=1,act_layer=nn.ReLU):
-        super(SepConv2d, self).__init__()
-        self.depthwise = torch.nn.Conv2d(in_channels,
-                                         in_channels,
-                                         kernel_size=kernel_size,
-                                         stride=stride,
-                                         padding=padding,
-                                         dilation=dilation,
-                                         groups=in_channels)
-        self.pointwise = torch.nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.act_layer = act_layer() if act_layer is not None else nn.Identity()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.stride = stride
+        self.conv = nn.Conv1d(1, 1, kernel_size=k_size, padding=(k_size - 1) // 2, bias=False) 
+        self.sigmoid = nn.Sigmoid()
+        self.channel = channel
+        self.k_size =k_size
 
     def forward(self, x):
-        x = self.depthwise(x)
-        x = self.act_layer(x)
-        x = self.pointwise(x)
+        # b hw c
+        # feature descriptor on the global spatial information
+        y = self.avg_pool(x.transpose(-1, -2))
+
+        # Two different branches of ECA module
+        y = self.conv(y.transpose(-1, -2))
+
+        # Multi-scale information fusion
+        y = self.sigmoid(y)
+
+        return x * y.expand_as(x)
+
+    def flops(self): 
+        flops = 0
+        flops += self.channel*self.channel*self.k_size
+        
+        return flops
+
+
+class LeFF(nn.Module):
+    def __init__(self, dim, mlp_ratio=4, act_layer=nn.GELU, drop = 0., use_eca=False):
+        super().__init__()
+        hidden_dim = int(mlp_ratio * dim)
+        self.linear1 = nn.Sequential(nn.Linear(dim, hidden_dim),
+                                act_layer())
+        self.dwconv = nn.Sequential(nn.Conv2d(hidden_dim,hidden_dim,groups=hidden_dim,kernel_size=3,stride=1,padding=1),
+                        act_layer())
+        self.linear2 = nn.Sequential(nn.Linear(hidden_dim, dim))
+        self.dim = dim
+        self.hidden_dim = hidden_dim
+        self.eca = eca_layer_1d(dim) if use_eca else nn.Identity()
+
+    def forward(self, x):
+        # bs x hw x c
+        bs, hw, c = x.size()
+        hh = int(math.sqrt(hw))
+
+        x = self.linear1(x)
+
+        # spatial restore
+        x = rearrange(x, ' b (h w) (c) -> b c h w ', h = hh, w = hh)
+        # bs,hidden_dim,32x32
+
+        x = self.dwconv(x)
+
+        # flaten
+        x = rearrange(x, ' b c h w -> b (h w) c', h = hh, w = hh)
+
+        x = self.linear2(x)
+        x = self.eca(x)
+
         return x
 
     def flops(self, H, W):
         flops = 0
-        flops += H*W*self.in_channels*self.kernel_size**2/self.stride**2
-        flops += H*W*self.in_channels*self.out_channels
+        # fc1
+        flops += H*W*self.dim*self.hidden_dim 
+        # dwconv
+        flops += H*W*self.hidden_dim*3*3
+        # fc2
+        flops += H*W*self.hidden_dim*self.dim
+        print("LeFF:{%.2f}"%(flops/1e9))
+        # eca 
+        if hasattr(self.eca, 'flops'): 
+            flops += self.eca.flops()
         return flops
 
 
@@ -393,7 +467,8 @@ class SepConv(nn.Module):
     """
     def __init__(self, dim, expansion_ratio=2,
         act1_layer=StarReLU, act2_layer=nn.Identity, 
-        bias=False, kernel_size=7, padding=3,
+        # bias=False, kernel_size=7, padding=3,
+        bias=True, kernel_size=3, padding=1,
         **kwargs, ):
         super().__init__()
         med_channels = int(expansion_ratio * dim)
@@ -541,7 +616,8 @@ class Uformer(nn.Module):
                  norm_layers=partial(LayerNormWithoutBias, eps=1e-6), # partial(LayerNormGeneral, eps=1e-6, bias=False),
                  drop_path_rate=0.,
                  layer_scale_init_values=None,
-                 res_scale_init_values=[None, None, 1.0, 1.0, 1.0, 1.0, 1.0, None, None],
+                #  res_scale_init_values=[None, None, 1.0, 1.0, 1.0, 1.0, 1.0, None, None],
+                 res_scale_init_values=None,
                  drop_rate=0.,
                  dowsample=Downsample, upsample=Upsample, **kwargs):
         super().__init__()
@@ -570,6 +646,8 @@ class Uformer(nn.Module):
         
         self.scale = scale
         self.embed_dim = embed_dim
+        self.token_mixers = token_mixers
+        self.mlps = mlps
         self.pos_drop = nn.Dropout(p=drop_rate)
         self.num_frames = burst_size
 
@@ -732,7 +810,7 @@ class Uformer(nn.Module):
         return {'relative_position_bias_table'}
 
     def extra_repr(self) -> str:
-        return f"embed_dim={self.embed_dim}, token_projection={self.token_projection}, token_mlp={self.mlp},win_size={self.win_size}"
+        return f"embed_dim={self.embed_dim}, token_mixers={self.token_mixers}, mlps={self.mlps}"
 
     def forward(self, x, x_base=None):
         # Input Multi-Frame Conv
