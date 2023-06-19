@@ -6,7 +6,12 @@ from thop import clever_format
 # from data.realbsr import RealBSR
 
 # model = get_model('uformer', dim=64, burst_size=14, in_channel=3, scale=4)
-model = get_model('uformer_leff', dim=64, burst_size=14, in_channel=3, scale=4)
+# model = get_model('uformer_leff', dim=64, burst_size=14, in_channel=3, scale=4)
+# model = get_model('uformer_anti', dim=64, burst_size=14, in_channel=3, scale=4)
+# model = get_model('uformer_tiny', dim=64, burst_size=14, in_channel=3, scale=4)
+# model = get_model('uformer_tiny_leff', dim=64, burst_size=14, in_channel=3, scale=4)
+# model = get_model('uformer_tiny_anti_7', dim=64, burst_size=14, in_channel=3, scale=4)
+model = get_model('uformer_tiny_leff', dim=64, burst_size=14, in_channel=3, scale=4)
 print(model)
 x = torch.randn(1, 14, 3, 160, 160)
 # y = model(x)

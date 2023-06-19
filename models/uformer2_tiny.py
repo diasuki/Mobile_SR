@@ -514,20 +514,27 @@ class SepConv(nn.Module):
     r"""
     Inverted separable convolution from MobileNetV2: https://arxiv.org/abs/1801.04381.
     """
-    def __init__(self, dim, expansion_ratio=2,
-        act1_layer=StarReLU, act2_layer=nn.Identity, 
+    def __init__(self, dim, expansion_ratio=4,
+        # act1_layer=StarReLU, act2_layer=nn.Identity, 
+        act1_layer=nn.GELU, act2_layer=nn.GELU,
         # bias=False, kernel_size=7, padding=3,
         bias=True, kernel_size=3, padding=1,
         **kwargs, ):
         super().__init__()
-        med_channels = int(expansion_ratio * dim)
-        self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
-        self.act1 = act1_layer()
-        self.dwconv = nn.Conv2d(
-            med_channels, med_channels, kernel_size=kernel_size,
-            padding=padding, groups=med_channels, bias=bias) # depthwise conv
-        self.act2 = act2_layer()
-        self.pwconv2 = nn.Linear(med_channels, dim, bias=bias)
+        # med_channels = int(expansion_ratio * dim)
+        # self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
+        # self.act1 = act1_layer()
+        # self.dwconv = nn.Conv2d(
+        #     med_channels, med_channels, kernel_size=kernel_size,
+        #     padding=padding, groups=med_channels, bias=bias) # depthwise conv
+        # self.act2 = act2_layer()
+        # self.pwconv2 = nn.Linear(med_channels, dim, bias=bias)
+        self.block = nn.Sequential(
+            nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(inplace=True),
+            nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(inplace=True),
+        )
 
     def forward(self, x):
         B, L, C = x.shape
@@ -535,13 +542,15 @@ class SepConv(nn.Module):
         W = int(math.sqrt(L))
         x = x.view(B, H, W, C)
 
-        x = self.pwconv1(x)
-        x = self.act1(x)
+        # x = self.pwconv1(x)
+        # x = self.act1(x)
         x = x.permute(0, 3, 1, 2)
-        x = self.dwconv(x)
+        # x = self.dwconv(x)
+        x = self.block(x)
+
         x = x.permute(0, 2, 3, 1)
-        x = self.act2(x)
-        x = self.pwconv2(x)
+        # x = self.act2(x)
+        # x = self.pwconv2(x)
 
         x = x.view(B, H * W, C)
         return x
@@ -662,7 +671,8 @@ class Uformer(nn.Module):
     def __init__(self, in_chans=3, scale=4, burst_size=14,
                  embed_dim=64, depths=[2, 2, 2, 2, 2, 2, 2, 2, 2],
                  token_mixers=SepConv, mlps=Mlp,
-                 norm_layers=partial(LayerNormWithoutBias, eps=1e-6), # partial(LayerNormGeneral, eps=1e-6, bias=False),
+                #  norm_layers=partial(LayerNormWithoutBias, eps=1e-6), # partial(LayerNormGeneral, eps=1e-6, bias=False),
+                 norm_layers=nn.LayerNorm,
                  drop_path_rate=0.,
                  layer_scale_init_values=None,
                 #  res_scale_init_values=[None, None, 1.0, 1.0, 1.0, 1.0, 1.0, None, None],
@@ -737,9 +747,9 @@ class Uformer(nn.Module):
                 res_scale_init_value=res_scale_init_values[0],
                 ) for j in range(depths[0])]
             )
-        self.dowsample_0 = dowsample(embed_dim, embed_dim*2)
+        self.dowsample_0 = dowsample(embed_dim, embed_dim)
         self.encoderlayer_1 = nn.Sequential(
-                *[MetaFormerBlock(dim=embed_dim*2,
+                *[MetaFormerBlock(dim=embed_dim,
                 token_mixer=token_mixers[1],
                 mlp=mlps[1],
                 norm_layer=norm_layers[1],
@@ -748,9 +758,9 @@ class Uformer(nn.Module):
                 res_scale_init_value=res_scale_init_values[1],
                 ) for j in range(depths[1])]
             )
-        self.dowsample_1 = dowsample(embed_dim*2, embed_dim*4)
+        self.dowsample_1 = dowsample(embed_dim, embed_dim)
         self.encoderlayer_2 = nn.Sequential(
-                *[MetaFormerBlock(dim=embed_dim*4,
+                *[MetaFormerBlock(dim=embed_dim,
                 token_mixer=token_mixers[2],
                 mlp=mlps[2],
                 norm_layer=norm_layers[2],
@@ -760,9 +770,9 @@ class Uformer(nn.Module):
                 ) for j in range(depths[2])]
             )
 
-        self.dowsample_2 = dowsample(embed_dim*4, embed_dim*8)
+        self.dowsample_2 = dowsample(embed_dim, embed_dim)
         self.encoderlayer_3 = nn.Sequential(
-                *[MetaFormerBlock(dim=embed_dim*8,
+                *[MetaFormerBlock(dim=embed_dim,
                 token_mixer=token_mixers[3],
                 mlp=mlps[3],
                 norm_layer=norm_layers[3],
@@ -771,11 +781,11 @@ class Uformer(nn.Module):
                 res_scale_init_value=res_scale_init_values[3],
                 ) for j in range(depths[3])]
             )
-        self.dowsample_3 = dowsample(embed_dim*8, embed_dim*16)
+        self.dowsample_3 = dowsample(embed_dim, embed_dim)
 
         # Bottleneck
         self.conv = nn.Sequential(
-                *[MetaFormerBlock(dim=embed_dim*16,
+                *[MetaFormerBlock(dim=embed_dim,
                 token_mixer=token_mixers[4],
                 mlp=mlps[4],
                 norm_layer=norm_layers[4],
@@ -786,9 +796,9 @@ class Uformer(nn.Module):
             )
 
         # Decoder
-        self.upsample_0 = upsample(embed_dim*16, embed_dim*8)
+        self.upsample_0 = upsample(embed_dim, embed_dim)
         self.decoderlayer_0 = nn.Sequential(
-                *[MetaFormerBlock(dim=embed_dim*16,
+                *[MetaFormerBlock(dim=embed_dim*2,
                 token_mixer=token_mixers[5],
                 mlp=mlps[5],
                 norm_layer=norm_layers[5],
@@ -797,9 +807,9 @@ class Uformer(nn.Module):
                 res_scale_init_value=res_scale_init_values[5],
                 ) for j in range(depths[5])]
             )
-        self.upsample_1 = upsample(embed_dim*16, embed_dim*4)
+        self.upsample_1 = upsample(embed_dim*2, embed_dim)
         self.decoderlayer_1 = nn.Sequential(
-                *[MetaFormerBlock(dim=embed_dim*8,
+                *[MetaFormerBlock(dim=embed_dim*2,
                 token_mixer=token_mixers[6],
                 mlp=mlps[6],
                 norm_layer=norm_layers[6],
@@ -808,9 +818,9 @@ class Uformer(nn.Module):
                 res_scale_init_value=res_scale_init_values[6],
                 ) for j in range(depths[6])]
             )
-        self.upsample_2 = upsample(embed_dim*8, embed_dim*2)
+        self.upsample_2 = upsample(embed_dim*2, embed_dim)
         self.decoderlayer_2 = nn.Sequential(
-                *[MetaFormerBlock(dim=embed_dim*4,
+                *[MetaFormerBlock(dim=embed_dim*2,
                 token_mixer=token_mixers[7],
                 mlp=mlps[7],
                 norm_layer=norm_layers[7],
@@ -819,7 +829,7 @@ class Uformer(nn.Module):
                 res_scale_init_value=res_scale_init_values[7],
                 ) for j in range(depths[7])]
             )
-        self.upsample_3 = upsample(embed_dim*4, embed_dim)
+        self.upsample_3 = upsample(embed_dim*2, embed_dim)
         self.decoderlayer_3 = nn.Sequential(
                 *[MetaFormerBlock(dim=embed_dim*2,
                 token_mixer=token_mixers[8],

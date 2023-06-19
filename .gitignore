@@ -59,3 +59,7 @@ get_*.ipynb
 
 # Log
 log/
+
+# tmp*.txt wait*.sh
+tmp*.txt
+wait*.sh

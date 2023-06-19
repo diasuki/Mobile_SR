@@ -1,11 +1,11 @@
 trap "exit" INT
 LOG_DIR="/data1/zq/mobile_sr/log/super_resolution/mobile_sr"
-DATA_DIR="/home/xiaoyao/data"
+DATA_DIR="/data1/zq/dataset/RealBSR_aligned"
 # MODEL_DIR="$HOME/model"
 NUM_WORKERS=8
 
 # EXP_NAME="debug"
-EXP_NAME="realbsr"
+EXP_NAME="realbsr_aligned"
 
 mode=$1; shift
 
