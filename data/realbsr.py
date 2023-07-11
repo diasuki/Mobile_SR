@@ -14,6 +14,10 @@ import colour_demosaicing
 from data.base import BaseDataset, get_dataloader, stratified_random_split
 # from utils.dataset_utils import Augment_RGB_torch
 
+from data.datasets.synthetic_burst_train_set import SyntheticBurstRGBAligned
+from data.datasets.synthetic_burst_val_set import SyntheticBurstValDF2K
+from data.datasets.zurich_raw2rgb_dataset import DIV2KRGB
+
 
 class Augment_RGB_torch:
     def __init__(self):
@@ -324,3 +328,29 @@ class RealBSRTextDataset(RealBSRDataset):
         self._RGBDataset = RealBSRText
         self._RAWDataset = RealBSRTextRAW
         self.dir = 'RealBSR_text'
+
+
+class DF2KDataset(BaseDataset):
+
+    def __init__(self, data_dir, space='RGB', size=384, burst_size=14):
+        super().__init__(data_dir, size)
+        assert space=='RGB', 'RGB Space!'
+        self.burst_size = burst_size
+        self.dir = 'SyntheticBurstDF2K'
+
+    def get_loader(self, batch_size, num_workers, split='val',
+                   world_size=1, rank=0):
+        is_train = (split == 'train')
+        data_dir = os.path.join(self.data_dir, self.dir)
+        if split == 'train':
+            dataset = DIV2KRGB(data_dir, split)
+            dataset = SyntheticBurstRGBAligned(dataset, burst_size=self.burst_size, crop_sz=self.size)
+        elif split == 'val':
+            dataset = SyntheticBurstValDF2K(data_dir, burst_size=self.burst_size, split=split)
+        else:
+            raise Exception
+
+        kwargs = dict(batch_size=batch_size, num_workers=num_workers,
+                      num_replicas=world_size, rank=rank)
+        loader = get_dataloader(dataset, shuffle=is_train, drop_last=is_train, **kwargs)
+        return loader

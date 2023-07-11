@@ -81,7 +81,12 @@ for method in $methods; do
 
     RUN_NAME="$space-$model-$method-($desc)"
 
-    if [[ $method = 'pretrain' ]]; then
+    if [[ $method = 'syn_pretrain' ]]; then
+        $train --run_name $RUN_NAME \
+            --dataset SyntheticBurstDF2K --image_space $space \
+            "$@"
+
+    elif [[ $method = 'pretrain' ]]; then
         $train --run_name $RUN_NAME \
             --dataset RealBSR --image_space $space \
             "$@"
