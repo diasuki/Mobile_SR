@@ -4,6 +4,8 @@
 
 CUDA_VISIBLE_DEVICES='0,1,2,3' bash run.sh train RGB unet_pares4_new syn_pretrain 'bs64,ps384,ep100,lr5e-4,charb' --charbonnier --lr 5e-4 --epoch 100 --image_size 384 --batch 64
 
+CUDA_VISIBLE_DEVICES='0,1,2,3' bash run.sh train RGB unet_pares4_new pretrain 'synPTsmall(bs32,ps384,ep100,lr2e-4,charb),ep100,lr1e-4,charb' --load_run_name 'RGB-unet_pares4_new-syn_pretrain_small-(bs32,ps384,ep100,lr2e-4,charb)' --charbonnier --lr 1e-4 --epoch 100
+
 CUDA_VISIBLE_DEVICES='0,1,2,3' bash run.sh train RGB unet_pares4_new pretrain 'mse'
 CUDA_VISIBLE_DEVICES='0,1,2,3' bash run.sh train RGB unet_pares4_new pretrain 'charb' --charbonnier
 CUDA_VISIBLE_DEVICES='0,1,2,3' bash run.sh train RGB unet_pares4_new pretrain 'charb,gw3' --charbonnier --gw_loss_weight 3

@@ -86,6 +86,11 @@ for method in $methods; do
             --dataset SyntheticBurstDF2K --image_space $space \
             "$@"
 
+    elif [[ $method = 'syn_pretrain_small' ]]; then
+        $train --run_name $RUN_NAME \
+            --dataset SyntheticBurstDIV2K --image_space $space \
+            "$@"
+
     elif [[ $method = 'pretrain' ]]; then
         $train --run_name $RUN_NAME \
             --dataset RealBSR --image_space $space \
