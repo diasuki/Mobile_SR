@@ -56,3 +56,9 @@ def get_model(arch, dim, burst_size, in_channel, scale):
     else:
         raise NotImplementedError(f"Unknown arch: {arch}")
     return model
+
+
+def get_teacher_model():
+    from .basemodel import Uformer
+    model = Uformer()
+    return model
