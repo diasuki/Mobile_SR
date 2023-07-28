@@ -8,13 +8,27 @@ from torch.nn.parallel import DistributedDataParallel
 
 from utils.experiman import manager
 from data import *
-from models import get_model
+from models import get_model, get_student_model, get_teacher_model
 from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss
 from trainers import StandardTrainer, LoopConfig, DistillTrainer
 from utils.misc import parse
 from utils.optim import get_optim
 import utils.metrics
 import datetime
+from collections import OrderedDict
+
+
+def load_checkpoint(model, weights):
+    checkpoint = torch.load(weights, 'cpu')
+    try:
+        model.load_state_dict(checkpoint["state_dict"])
+    except:
+        state_dict = checkpoint["state_dict"]
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            name = k[7:] if 'module.' in k else k
+            new_state_dict[name] = v
+        model.load_state_dict(new_state_dict)
 
 
 def add_parser_argument(parser):
@@ -76,6 +90,9 @@ def add_parser_argument(parser):
     #                     help='test on training set every TP epochs')
     parser.add_argument('--comment', default='', type=str)
     ## ==================== Experimental ======================
+    parser.add_argument('--mask_ratio', default=0., type=float)
+    parser.add_argument('--teacher', default='', type=str)
+    parser.add_argument('--inter_features', action='store_true')
 
 
 def main():
@@ -133,7 +150,7 @@ def main():
 
     # Model
     logger.info('==> Building models')
-    model = get_model(
+    model = get_student_model(
         arch=opt.arch, dim=opt.dim, burst_size=opt.burst_size,
         in_channel=opt.in_channel, scale=opt.scale,
     ).to(device)
@@ -147,7 +164,11 @@ def main():
     models = {'model': model}
 
     # Teacher model
-    teacher = None
+    teacher = get_teacher_model(opt.mask_ratio).to(device).eval()
+    # Freeze all parameters and Load Teacher model
+    for p in teacher.parameters():
+        p.requires_grad = False
+    load_checkpoint(teacher, opt.teacher)
 
     # Criterions
     criterions = {}
@@ -242,7 +263,8 @@ def main():
         ckpt_period=opt.ckpt_period,
         device=device,
         resume_ckpt=resume_ckpt,
-        teacher=teacher
+        teacher=teacher,
+        inter_features=opt.inter_features
     )
 
     trainer.train()

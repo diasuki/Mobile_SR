@@ -10,6 +10,10 @@ from utils.experiman import ExperiMan
 from utils.metrics import batch_PSNR as psnr
 from utils.metrics import mySSIM as ssim
 from utils.metrics import myLPIPS as lpips
+from utils.metrics import AlignedPSNR
+from utils.post_processing_vis import generate_processed_image_channel3
+import pickle
+import cv2
 
 
 class StandardTrainer(BaseTrainer):
@@ -28,6 +32,8 @@ class StandardTrainer(BaseTrainer):
         save_init_ckpt: bool = False,
         resume_ckpt: dict = None,
         keep_eval_mode: bool = False,
+        aligned: bool = False,
+        alignment_net: nn.Module = None
     ):
         self.opt = manager.get_opt()
         super().__init__(
@@ -44,6 +50,10 @@ class StandardTrainer(BaseTrainer):
             resume_ckpt=resume_ckpt,
         )
         self.keep_eval_mode = keep_eval_mode
+        self.aligned = aligned
+        self.alignment_net = alignment_net
+        if self.aligned:
+            self.aligned_psnr = AlignedPSNR(alignment_net=alignment_net, boundary_ignore=40)
         self.setup_meters()
     
     def setup_meters(self):
@@ -145,7 +155,11 @@ class StandardTrainer(BaseTrainer):
         if self.opt.gw_loss_weight:
             self.loop_meters['loss_gw'].update(loss_gw)
         if self.opt.log_train_psnr:
-            self.loop_meters['PSNR'].update(psnr(images_restored, images_HR))
+            if self.aligned:
+                psnr_tmp, ssim_tmp, lpips_tmp = self.aligned_psnr(images_restored, images_HR)
+                self.loop_meters['PSNR'].update(psnr_tmp)
+            else:
+                self.loop_meters['PSNR'].update(psnr(images_restored, images_HR))
 
     def do_step_test(self, data_batch, config):
         model = self.models['model']
@@ -162,12 +176,18 @@ class StandardTrainer(BaseTrainer):
         # images_restored = torch.clamp(images_restored, 0, 1)
 
         n = len(images_HR)
-        self.loop_meters['PSNR'].update(
-            psnr(images_restored, images_HR, average=False), n)
-        self.loop_meters['SSIM'].update(
-            ssim(images_restored, images_HR) * n, n)
-        self.loop_meters['LPIPS'].update(
-            lpips(images_restored, images_HR) * n, n)
+        if self.aligned:
+            psnr_tmp, ssim_tmp, lpips_tmp = self.aligned_psnr(images_restored, images_HR)
+            self.loop_meters['PSNR'].update(psnr_tmp * n, n)
+            self.loop_meters['SSIM'].update(ssim_tmp * n, n)
+            self.loop_meters['LPIPS'].update(lpips_tmp * n, n)
+        else:
+            self.loop_meters['PSNR'].update(
+                psnr(images_restored, images_HR, average=False), n)
+            self.loop_meters['SSIM'].update(
+                ssim(images_restored, images_HR) * n, n)
+            self.loop_meters['LPIPS'].update(
+                lpips(images_restored, images_HR) * n, n)
 
 class StandardTester(StandardTrainer):
 
@@ -191,17 +211,36 @@ class StandardTester(StandardTrainer):
         images_restored = model(images_LR, base_frame)
         images_restored = torch.clamp(images_restored, 0, 1)
         n = len(images_HR)
-        self.loop_meters['PSNR'].update(
-            psnr(images_restored, images_HR, average=False), n)
-        self.loop_meters['SSIM'].update(
-            ssim(images_restored, images_HR) * n, n)
-        self.loop_meters['LPIPS'].update(
-            lpips(images_restored, images_HR) * n, n)
+        if self.aligned:
+            psnr_tmp, ssim_tmp, lpips_tmp = self.aligned_psnr(images_restored, images_HR)
+            self.loop_meters['PSNR'].update(psnr_tmp * n, n)
+            self.loop_meters['SSIM'].update(ssim_tmp * n, n)
+            self.loop_meters['LPIPS'].update(lpips_tmp * n, n)
+        else:
+            self.loop_meters['PSNR'].update(
+                psnr(images_restored, images_HR, average=False), n)
+            self.loop_meters['SSIM'].update(
+                ssim(images_restored, images_HR) * n, n)
+            self.loop_meters['LPIPS'].update(
+                lpips(images_restored, images_HR) * n, n)
 
         if self.opt.save_images:
             burst_names = data_batch['burst_name']
-            for image_restored, burst_name in zip(images_restored, burst_names):
-                img = TF.to_pil_image(image_restored)
-                filename = f'{burst_name}-{self.opt.run_name}.png'
-                path = os.path.join(self.images_dir, filename)
-                img.save(path)
+            if self.opt.image_space == 'RAW':
+                pkl_paths = data_batch['pkl_path']
+                for image_restored, burst_name, pkl_path in zip(images_restored, burst_names, pkl_paths):
+                    with open(pkl_path, 'rb') as f:
+                        meta_data = pickle.load(f)
+                    image_restored_saved = generate_processed_image_channel3(image_restored.cpu(), meta_data, return_np=True, black_level_substracted=True)
+                    image_restored_saved = cv2.cvtColor(image_restored_saved, cv2.COLOR_RGB2BGR)
+                    filename = f'{burst_name}-{self.opt.run_name}.png'
+                    path = os.path.join(self.images_dir, filename)
+                    cv2.imwrite(path, image_restored_saved)
+            elif self.opt.image_space == 'RGB':
+                for image_restored, burst_name in zip(images_restored, burst_names):
+                    img = TF.to_pil_image(image_restored)
+                    filename = f'{burst_name}-{self.opt.run_name}.png'
+                    path = os.path.join(self.images_dir, filename)
+                    img.save(path)
+            else:
+                raise NotImplementedError(f"Unknown image space: {self.opt.image_space}")

@@ -168,3 +168,61 @@ class LPIPS(nn.Module):
     
 mySSIM = SSIM(boundary_ignore=40)
 myLPIPS = LPIPS(boundary_ignore=40)
+
+
+from utils.warp import warp
+from pytorch_msssim import ssim
+class AlignedPSNR(nn.Module):
+    def __init__(self, alignment_net, sr_factor=4, boundary_ignore=None, max_value=1.0):
+        super().__init__()
+        self.l2 = AlignedL2(alignment_net=alignment_net, sr_factor=sr_factor, boundary_ignore=boundary_ignore)
+        self.max_value = max_value
+
+    def psnr(self, pred, gt):
+        mse, ss, lp = self.l2(pred, gt)
+
+        psnr = 20 * math.log10(self.max_value) - 10.0 * mse.log10()
+
+        return psnr, ss, lp
+
+    def forward(self, pred, gt):
+        all_scores = [self.psnr(p.unsqueeze(0), g.unsqueeze(0)) for p, g in zip(pred, gt)]
+        psnr = sum([score[0] for score in all_scores]) / len(all_scores)
+        ssim_ = sum([score[1] for score in all_scores]) / len(all_scores)
+        lpips_ = sum([score[2] for score in all_scores]) / len(all_scores)
+        return psnr, ssim_, lpips_
+
+
+class AlignedL2(nn.Module):
+    def __init__(self, alignment_net, sr_factor=4, boundary_ignore=None):
+        super().__init__()
+        self.sr_factor = sr_factor
+        self.boundary_ignore = boundary_ignore
+        self.alignment_net = alignment_net
+        self.loss_fn = lpips.LPIPS(net='alex').cuda()
+
+    def forward(self, pred, gt):
+        # Estimate flow between the prediction and the ground truth
+        with torch.no_grad():
+            flow = self.alignment_net(pred / (pred.max() + 1e-6), gt / (gt.max() + 1e-6))
+
+        # Warp the prediction to the ground truth coordinates
+        pred_warped_m = warp(pred, flow)
+
+        # Ignore boundary pixels if specified
+        if self.boundary_ignore is not None:
+            pred_warped_m = pred_warped_m[..., self.boundary_ignore:-self.boundary_ignore,
+                            self.boundary_ignore:-self.boundary_ignore]
+            gt = gt[..., self.boundary_ignore:-self.boundary_ignore, self.boundary_ignore:-self.boundary_ignore]
+
+        # Estimate MSE
+        mse = F.mse_loss(pred_warped_m.contiguous(), gt.contiguous())
+
+        ss = ssim(pred_warped_m.contiguous(), gt.contiguous(), data_range=1.0, size_average=True)
+        # eps = 1e-12
+        # elem_ratio = ss.numel() / valid.numel()
+        # ss = (ss * valid.float()).sum() / (valid.float().sum()*elem_ratio + eps)
+
+        lp = self.loss_fn(pred_warped_m.contiguous(), gt.contiguous()).squeeze()
+
+        return mse, ss, lp

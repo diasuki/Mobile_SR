@@ -12,3 +12,4 @@ dataclasses
 lpips
 tensorboard
 colour_demosaicing
+pytorch_msssim

@@ -1,4 +1,4 @@
-from .unet import UNet
+from .unet import UNet, UNet_student
 from functools import partial
 
 __all__ = ['get_model']
@@ -58,7 +58,16 @@ def get_model(arch, dim, burst_size, in_channel, scale):
     return model
 
 
-def get_teacher_model():
+def get_student_model(arch, dim, burst_size, in_channel, scale):
+    if arch.startswith('unet'):
+        model = UNet_student(dim=dim, burst_size=burst_size,
+                     in_channel=in_channel, scale=scale, conv_block=arch[5:])
+    else:
+        raise NotImplementedError(f"Unknown arch: {arch}")
+    return model
+
+
+def get_teacher_model(mask_ratio=0.):
     from .basemodel import Uformer
-    model = Uformer()
+    model = Uformer(mask_ratio=mask_ratio)
     return model

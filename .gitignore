@@ -59,6 +59,8 @@ get_*.ipynb
 # Log
 log/
 
-# tmp*.txt wait*.sh
+# tmp*.txt wait*.sh debug*.py tmp
 tmp*.txt
 wait*.sh
+debug*.py
+tmp/

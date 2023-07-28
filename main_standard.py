@@ -9,7 +9,7 @@ from torch.nn.parallel import DistributedDataParallel
 from utils.experiman import manager
 from data import *
 from models import get_model
-from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss
+from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss, L1_with_CX, AlignedL1, AlignedGWLoss
 from trainers import StandardTrainer, LoopConfig
 from utils.misc import parse
 from utils.optim import get_optim
@@ -42,6 +42,9 @@ def add_parser_argument(parser):
     parser.add_argument('--auto_resume', action='store_true')
     parser.add_argument('--resume_ckpt', type=str)
     parser.add_argument('--charbonnier', action='store_true')
+    parser.add_argument('--aligned', action='store_true')
+    parser.add_argument('--aligned_gw_loss_weight', type=float)
+    parser.add_argument('--cx', action='store_true')
     parser.add_argument('--cobi', action='store_true')
     parser.add_argument('--gw_loss_weight', type=float)
     parser.add_argument('--adaptive', action='store_true')
@@ -148,7 +151,21 @@ def main():
 
     # Criterions
     criterions = {}
-    if opt.cobi:
+    if opt.aligned:
+        from pwcnet.pwcnet import PWCNet
+        alignment_net = PWCNet(load_pretrained=True,
+                           weights_path='./pwcnet/pwcnet-network-default.pth')
+        alignment_net = alignment_net.to('cuda')
+        for param in alignment_net.parameters():
+            param.requires_grad = False
+        opt.alignment_net = alignment_net
+        if opt.aligned_gw_loss_weight:
+            criterions['reconstruction'] = AlignedGWLoss(alignment_net=alignment_net, aligned_gw_loss_weight=opt.aligned_gw_loss_weight, boundary_ignore=40)
+        else:
+            criterions['reconstruction'] = AlignedL1(alignment_net=alignment_net, boundary_ignore=40)
+    elif opt.cx:
+        criterions['reconstruction'] = L1_with_CX(boundary_ignore=40)
+    elif opt.cobi:
         criterions['reconstruction'] = L1_with_CoBi(boundary_ignore=40)
     elif opt.charbonnier:
         criterions['reconstruction'] = CharbonnierLoss()
@@ -239,6 +256,8 @@ def main():
         ckpt_period=opt.ckpt_period,
         device=device,
         resume_ckpt=resume_ckpt,
+        aligned=opt.aligned,
+        alignment_net=opt.alignment_net if opt.aligned else None
     )
 
     trainer.train()

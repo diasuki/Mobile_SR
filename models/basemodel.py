@@ -636,7 +636,7 @@ class PixelMask(nn.Module):
 
         self.num_pixels = self.height * self.width
 
-    def forward(self, x, mask_ratio=0.6):
+    def forward(self, x, mask_ratio=0.):
         self.num_pixels = x.shape[-2]
         num_mask = int(mask_ratio * self.num_pixels)
         # print("mask_ratio = {} masked_pixels_num: {} pixels_num: {}".format(mask_ratio, num_mask, self.num_pixels))
@@ -1267,7 +1267,7 @@ class CatCrossUformerLayer(nn.Module):
         return flops
 
 class Uformer(nn.Module):
-    def __init__(self, img_size=160, in_chans=3,
+    def __init__(self, mask_ratio=0.0, img_size=160, in_chans=3,
                  embed_dim=64, depths=[2, 2, 2, 2, 2, 2, 2, 2, 2], num_heads=[1, 2, 4, 8, 16, 16, 8, 4, 2],
                  win_size=10, mlp_ratio=4., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.,
@@ -1287,6 +1287,7 @@ class Uformer(nn.Module):
         self.reso = img_size
         self.pos_drop = nn.Dropout(p=drop_rate)
         self.num_frames = 14
+        self.mask_ratio = mask_ratio
 
         # stochastic depth
         enc_dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths[:self.num_enc_layers]))]
@@ -1300,7 +1301,7 @@ class Uformer(nn.Module):
         self.output_proj = OutputProj(in_channel=2*embed_dim, out_channel=embed_dim, kernel_size=3, stride=1)
 
         # pixel_mask
-        # self.pixel_mask = PixelMask(height=img_size, width=img_size, dim=embed_dim)
+        self.pixel_mask = PixelMask(height=img_size, width=img_size, dim=embed_dim)
 
         conv = common.default_conv
         scale = 4
@@ -1487,8 +1488,14 @@ class Uformer(nn.Module):
 
     def extra_repr(self) -> str:
         return f"embed_dim={self.embed_dim}, token_projection={self.token_projection}, token_mlp={self.mlp},win_size={self.win_size}"
+    
+    def NLC_to_NCHW(self, x):
+        B, HW, C = x.shape
+        H = W = int(math.sqrt(HW))
+        return x.transpose(1, 2).reshape(B, C, H, W)
 
     def forward(self, x, mask=None):
+        feature_maps = []
         # Input Multi-Frame Conv
         b, t, c, h, w = x.size()
         assert t == 14, 'Frame should be 14!'
@@ -1509,7 +1516,7 @@ class Uformer(nn.Module):
         y = self.pos_drop(y)
 
         ## pixel mask here
-        # y = self.pixel_mask(y, self.mask_ratio)
+        y = self.pixel_mask(y, self.mask_ratio)
 
         #Encoder
         conv0 = self.encoderlayer_0(y,mask=mask)
@@ -1529,18 +1536,22 @@ class Uformer(nn.Module):
         up0 = self.upsample_0(conv4)
         deconv0 = torch.cat([up0,conv3],-1)
         deconv0 = self.decoderlayer_0(deconv0,mask=mask)
+        feature_maps.append(self.NLC_to_NCHW(deconv0))
 
         up1 = self.upsample_1(deconv0)
         deconv1 = torch.cat([up1,conv2],-1)
         deconv1 = self.decoderlayer_1(deconv1,mask=mask)
+        feature_maps.append(self.NLC_to_NCHW(deconv1))
 
         up2 = self.upsample_2(deconv1)
         deconv2 = torch.cat([up2,conv1],-1)
         deconv2 = self.decoderlayer_2(deconv2,mask=mask)
+        feature_maps.append(self.NLC_to_NCHW(deconv2))
 
         up3 = self.upsample_3(deconv2)
         deconv3 = torch.cat([up3,conv0],-1)
         deconv3 = self.decoderlayer_3(deconv3,mask=mask)
+        feature_maps.append(self.NLC_to_NCHW(deconv3))
 
         # Output Projection
         y = self.output_proj(deconv3)
@@ -1551,7 +1562,7 @@ class Uformer(nn.Module):
 
         out = output + base
 
-        return out
+        return feature_maps, out
 
     def flops(self):
         flops = 0
@@ -1575,7 +1586,7 @@ class Uformer(nn.Module):
         # Output Projection
         flops += self.output_proj.flops(self.reso,self.reso)
         return flops
-
+    
 class Uformer_Cross(nn.Module):
     def __init__(self, img_size=128, in_chans=3,
                  embed_dim=32, depths=[2, 2, 2, 2, 2, 2, 2, 2, 2], num_heads=[1, 2, 4, 8, 16, 8, 4, 2, 1],

@@ -70,6 +70,16 @@ def main():
         model = DistributedDataParallel(model, device_ids=[local_rank])
     models = {'model': model}
 
+    # Aligned
+    if opt.aligned:
+        from pwcnet.pwcnet import PWCNet
+        alignment_net = PWCNet(load_pretrained=True,
+                           weights_path='./pwcnet/pwcnet-network-default.pth')
+        alignment_net = alignment_net.to('cuda')
+        for param in alignment_net.parameters():
+            param.requires_grad = False
+        opt.alignment_net = alignment_net
+
     # Metrics
     utils.metrics.myLPIPS.to(device)
     
@@ -100,6 +110,8 @@ def main():
         log_period=opt.log_period,
         ckpt_period=opt.ckpt_period,
         device=device,
+        aligned=opt.aligned,
+        alignment_net=opt.alignment_net if opt.aligned else None
     )
 
     trainer.test()

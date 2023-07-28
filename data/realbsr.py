@@ -255,6 +255,7 @@ class RealBSRRAW(RealBSR):
         burst_nmber2 = int(self.burst_list[burst_id].split('_')[-1])
         name = self.hr_filename.format(
             self.hrdir, self.burst_list[burst_id], burst_number, burst_nmber2)
+        pkl_path = '{}/{}/{}_MFSR_Sony_{:04d}_x4.pkl'.format(self.hrdir, self.burst_list[burst_id], burst_number, burst_nmber2)
 
         img = cv2.imread(f'{name}.png', cv2.IMREAD_UNCHANGED)
         image = torch.from_numpy(img.astype(np.float32)).permute(2, 0, 1)  # [3, H, W]
@@ -266,10 +267,49 @@ class RealBSRRAW(RealBSR):
         # normalize to [0, 1]
         image = image / 16383.
 
-        return image
+        return image, pkl_path
+
+    def get_burst(self, burst_id, im_ids):
+        frames = [self._get_raw_image(burst_id, i) for i in im_ids]
+        # pic = self._get_raw_image(burst_id, 0)
+        gt, pkl_path = self._get_gt_image(burst_id)
+        return frames, gt, pkl_path
 
     def __getitem__(self, index):
-        data = super().__getitem__(index)
+        # Sample the images in the burst, in case a burst_size < 14 is used.
+        im_ids = self._sample_images()
+
+        frames, gt, pkl_path = self.get_burst(index, im_ids)
+        info = self.get_burst_info(index)
+
+        # Extract crop if needed
+        # if frames[0].shape[-1] != self.crop_sz:
+        #     print(frames[0].shape, self.crop_sz)
+            # r1 = random.randint(0, frames[0].shape[-2] - self.crop_sz)
+            # c1 = random.randint(0, frames[0].shape[-1] - self.crop_sz)
+            # r2 = r1 + self.crop_sz
+            # c2 = c1 + self.crop_sz
+
+            # scale_factor = gt.shape[-1] // frames[0].shape[-1]
+
+            # print(scale_factor)
+
+            # frames = [get_crop(im, r1, r2, c1, c2) for im in frames]
+            # gt = get_crop(gt, scale_factor * r1, scale_factor * r2, scale_factor * c1, scale_factor * c2)
+
+        if self.split == 'train':
+            apply_trans = transforms_aug[random.getrandbits(3)]
+            frames = [getattr(augment, apply_trans)(im) for im in frames]
+            gt = getattr(augment, apply_trans)(gt)
+
+        burst = torch.stack(frames, dim=0)
+        burst = burst.float()
+        frame_gt = gt.float()
+
+        data = {}
+        data['LR'] = burst
+        data['HR'] = frame_gt
+        data['burst_name'] = info['burst_name']
 
         # base frame
         flattened_image = flatten_raw_image(data['LR'][0])
@@ -277,6 +317,7 @@ class RealBSRRAW(RealBSR):
         base_frame = torch.clamp(torch.from_numpy(demosaiced_image).type_as(flattened_image),
                                  min=0.0, max=1.0).permute(2, 0, 1)
         data['base frame'] = base_frame
+        data['pkl_path'] = pkl_path
 
         return data
 
