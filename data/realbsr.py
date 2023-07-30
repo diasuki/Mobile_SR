@@ -373,11 +373,12 @@ class RealBSRTextDataset(RealBSRDataset):
 
 class DF2KDataset(BaseDataset):
 
-    def __init__(self, data_dir, space='RGB', size=384, burst_size=14):
+    def __init__(self, name, data_dir, space='RGB', size=384, burst_size=14):
         super().__init__(data_dir, size)
         assert space=='RGB', 'RGB Space!'
         self.burst_size = burst_size
-        self.dir = 'SyntheticBurstDF2K'
+        # self.dir = 'SyntheticBurstDF2K'
+        self.dir = name
 
     def get_loader(self, batch_size, num_workers, split='val',
                    world_size=1, rank=0):
@@ -399,11 +400,12 @@ class DF2KDataset(BaseDataset):
 
 class DIV2KDataset(BaseDataset):
 
-    def __init__(self, data_dir, space='RGB', size=384, burst_size=14):
+    def __init__(self, name, data_dir, space='RGB', size=384, burst_size=14):
         super().__init__(data_dir, size)
         assert space=='RGB', 'RGB Space!'
         self.burst_size = burst_size
-        self.dir = 'SyntheticBurstDIV2K'
+        # self.dir = 'SyntheticBurstDIV2K'
+        self.dir = name
 
     def get_loader(self, batch_size, num_workers, split='val',
                    world_size=1, rank=0):

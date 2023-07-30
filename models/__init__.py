@@ -71,3 +71,9 @@ def get_teacher_model(mask_ratio=0.):
     from .basemodel import Uformer
     model = Uformer(mask_ratio=mask_ratio)
     return model
+
+
+def get_teacher_model_distill(mask_ratio=0.):
+    from .basemodel import Uformer_teacher
+    model = Uformer_teacher(mask_ratio=mask_ratio)
+    return model

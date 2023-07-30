@@ -33,6 +33,7 @@ def add_parser_argument(parser):
     ## ======================= Model ==========================
     parser.add_argument('--arch', type=str)
     parser.add_argument('--dim', default=64, type=int)
+    parser.add_argument('--mask_ratio', default=0., type=float)
     parser.add_argument('--load_ckpt', type=str)
     parser.add_argument('--load_run_name', type=str)
     parser.add_argument('--load_run_number', type=str)
@@ -133,7 +134,7 @@ def main():
 
     # Model
     logger.info('==> Building models')
-    model = get_teacher_model().to(device)
+    model = get_teacher_model(opt.mask_ratio).to(device)
     # model = torch.compile(model)
     # model = torch.compile(model, mode='reduce-overhead')
     if world_size > 1:

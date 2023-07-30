@@ -8,7 +8,7 @@ from torch.nn.parallel import DistributedDataParallel
 
 from utils.experiman import manager
 from data import *
-from models import get_model, get_student_model, get_teacher_model
+from models import get_model, get_student_model, get_teacher_model_distill
 from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss
 from trainers import StandardTrainer, LoopConfig, DistillTrainer
 from utils.misc import parse
@@ -164,7 +164,7 @@ def main():
     models = {'model': model}
 
     # Teacher model
-    teacher = get_teacher_model(opt.mask_ratio).to(device).eval()
+    teacher = get_teacher_model_distill(opt.mask_ratio).to(device).eval()
     # Freeze all parameters and Load Teacher model
     for p in teacher.parameters():
         p.requires_grad = False
