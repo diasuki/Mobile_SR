@@ -8,6 +8,21 @@ def get_model(arch, dim, burst_size, in_channel, scale):
     if arch.startswith('unet'):
         model = UNet(dim=dim, burst_size=burst_size,
                      in_channel=in_channel, scale=scale, conv_block=arch[5:])
+    elif arch.startswith('swinir'):
+        from .swinir import SwinIR
+        model = SwinIR(embed_dim=dim, burst_size=burst_size, in_chans=in_channel, scale=scale)
+    elif arch.startswith('shufflemixer'):
+        from .shufflemixer_arch import ShuffleMixer
+        model = ShuffleMixer(dim=dim, burst_size=burst_size, in_channel=in_channel, scale=scale)
+    elif arch.startswith('safmn'):
+        if arch == 'safmn1':
+            from .safmn_arch import SAFMN1
+            model = SAFMN1(dim=dim, burst_size=burst_size, in_channel=in_channel, scale=scale)
+        elif arch == 'safmn':
+            from .safmn_arch import SAFMN
+            model = SAFMN(dim=dim, burst_size=burst_size, in_channel=in_channel, scale=scale)
+        else:
+            raise NotImplementedError(f"Unknown arch: {arch}")
     elif arch.startswith('uformer2_tiny'):
         from .uformer2_tiny import Uformer, LeFF, Anti_FFN
         from .uformer2_tiny import SepConv

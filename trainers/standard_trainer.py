@@ -145,6 +145,10 @@ class StandardTrainer(BaseTrainer):
             criterion_lapgw = self.criterions['lapgw']
             loss_lapgw = criterion_lapgw(images_restored, images_HR)
             loss += self.opt.lapgw_loss_weight * loss_lapgw
+        if self.opt.fft_loss_weight:
+            criterion_fft = self.criterions['fft']
+            loss_fft = criterion_fft(images_restored, images_HR)
+            loss += loss_fft
 
         loss /= n_accum_steps
         loss.backward()

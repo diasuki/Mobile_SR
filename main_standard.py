@@ -9,7 +9,7 @@ from torch.nn.parallel import DistributedDataParallel
 from utils.experiman import manager
 from data import *
 from models import get_model
-from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss, L1_with_CX, AlignedL1, AlignedGWLoss
+from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss, L1_with_CX, AlignedL1, AlignedGWLoss, FFTLoss
 from trainers import StandardTrainer, LoopConfig
 from utils.misc import parse
 from utils.optim import get_optim
@@ -49,6 +49,7 @@ def add_parser_argument(parser):
     parser.add_argument('--gw_loss_weight', type=float)
     parser.add_argument('--adaptive', action='store_true')
     parser.add_argument('--lapgw_loss_weight', type=float)
+    parser.add_argument('--fft_loss_weight', type=float)
     ## ==================== Optimization ======================
     parser.add_argument('--epoch', default=200, type=int)
     parser.add_argument('--num_iters_train', type=int,
@@ -178,6 +179,8 @@ def main():
             criterions['gw'] = GWLoss()
     if opt.lapgw_loss_weight:
         criterions['lapgw'] = LapGWLoss()
+    if opt.fft_loss_weight:
+        criterions['fft'] = FFTLoss(loss_weight=opt.fft_loss_weight)
     print(criterions)
     for criterion in criterions.values():
         criterion.to(device)

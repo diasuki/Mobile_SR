@@ -425,3 +425,20 @@ class UNet_student(nn.Module):
             feature_maps[i] = self.connectors[i](feature_maps[i])
 
         return feature_maps, out
+
+
+if __name__== '__main__':
+    #############Test Model Complexity #############
+    from fvcore.nn import flop_count_table, FlopCountAnalysis, ActivationCountAnalysis    
+    # x = torch.randn(1, 3, 640, 360)
+    # x = torch.randn(1, 3, 427, 240)
+    x = torch.randn(1, 14, 3, 160, 160)
+    # x = torch.randn(1, 3, 256, 256)
+
+    model = UNet(dim=64, burst_size=14, in_channel=3, out_channel=3, scale=4, conv_block='pares4_new')
+    # model = SAFMN(dim=36, n_blocks=12, ffn_scale=2.0, upscaling_factor=2)
+    print(model)
+    print(f'params: {sum(map(lambda x: x.numel(), model.parameters()))}')
+    print(flop_count_table(FlopCountAnalysis(model, x), activations=ActivationCountAnalysis(model, x)))
+    output = model(x)
+    print(output.shape)

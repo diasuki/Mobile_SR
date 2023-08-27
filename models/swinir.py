@@ -10,6 +10,58 @@ import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 from models.common import default_conv, ResBlock, Upsampler, TSAFusion
+# from common import default_conv, ResBlock, Upsampler, TSAFusion
+from einops import rearrange
+
+
+class SepConv(nn.Module):
+    r"""
+    Inverted separable convolution from MobileNetV2: https://arxiv.org/abs/1801.04381.
+    """
+    def __init__(self, dim, expansion_ratio=4,
+        # act1_layer=StarReLU, act2_layer=nn.Identity, 
+        act1_layer=nn.GELU, act2_layer=nn.GELU,
+        # bias=False, kernel_size=7, padding=3,
+        bias=True, kernel_size=3, padding=1,
+        **kwargs, ):
+        super().__init__()
+        med_channels = int(expansion_ratio * dim)
+        self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
+        self.act1 = act1_layer()
+        self.dwconv = nn.Conv2d(
+            med_channels, med_channels, kernel_size=kernel_size,
+            padding=padding, groups=med_channels, bias=bias) # depthwise conv
+        self.act2 = act2_layer()
+        self.pwconv2 = nn.Linear(med_channels, dim, bias=bias)
+
+    def forward(self, x):
+        B, L, C = x.shape
+        H = int(math.sqrt(L))
+        W = int(math.sqrt(L))
+        x = x.view(B, H, W, C)
+
+        x = self.pwconv1(x)
+        x = self.act1(x)
+        x = x.permute(0, 3, 1, 2)
+        x = self.dwconv(x)
+        x = x.permute(0, 2, 3, 1)
+        x = self.act2(x)
+        x = self.pwconv2(x)
+
+        x = x.view(B, H * W, C)
+        return x
+
+
+class Scale(nn.Module):
+    """
+    Scale vector by element multiplications.
+    """
+    def __init__(self, dim, init_value=1.0, trainable=True):
+        super().__init__()
+        self.scale = nn.Parameter(init_value * torch.ones(dim), requires_grad=trainable)
+
+    def forward(self, x):
+        return x * self.scale
 
 
 class Mlp(nn.Module):
@@ -28,6 +80,75 @@ class Mlp(nn.Module):
         x = self.drop(x)
         x = self.fc2(x)
         x = self.drop(x)
+        return x
+
+
+class eca_layer_1d(nn.Module):
+    """Constructs a ECA module.
+    Args:
+        channel: Number of channels of the input feature map
+        k_size: Adaptive selection of kernel size
+    """
+    def __init__(self, channel, k_size=3):
+        super(eca_layer_1d, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool1d(1)
+        self.conv = nn.Conv1d(1, 1, kernel_size=k_size, padding=(k_size - 1) // 2, bias=False) 
+        self.sigmoid = nn.Sigmoid()
+        self.channel = channel
+        self.k_size = k_size
+
+    def forward(self, x):
+        # b hw c
+        # feature descriptor on the global spatial information
+        y = self.avg_pool(x.transpose(-1, -2))
+
+        # Two different branches of ECA module
+        y = self.conv(y.transpose(-1, -2))
+
+        # Multi-scale information fusion
+        y = self.sigmoid(y)
+
+        return x * y.expand_as(x)
+
+    def flops(self): 
+        flops = 0
+        flops += self.channel*self.channel*self.k_size
+        
+        return flops
+
+
+class LeFF(nn.Module):
+    def __init__(self, dim, mlp_ratio=4, act_layer=nn.GELU, drop = 0., use_eca=False):
+        super().__init__()
+        hidden_dim = int(mlp_ratio * dim)
+        self.linear1 = nn.Sequential(nn.Linear(dim, hidden_dim),
+                                act_layer())
+        self.dwconv = nn.Sequential(nn.Conv2d(hidden_dim,hidden_dim,groups=hidden_dim,kernel_size=3,stride=1,padding=1),
+                        act_layer())
+        self.linear2 = nn.Sequential(nn.Linear(hidden_dim, dim))
+        self.dim = dim
+        self.hidden_dim = hidden_dim
+        self.eca = eca_layer_1d(dim) if use_eca else nn.Identity()
+
+    def forward(self, x):
+        # bs x hw x c
+        bs, hw, c = x.size()
+        hh = int(math.sqrt(hw))
+
+        x = self.linear1(x)
+
+        # spatial restore
+        x = rearrange(x, ' b (h w) (c) -> b c h w ', h = hh, w = hh)
+        # bs,hidden_dim,32x32
+
+        x = self.dwconv(x)
+
+        # flaten
+        x = rearrange(x, ' b c h w -> b (h w) c', h = hh, w = hh)
+
+        x = self.linear2(x)
+        x = self.eca(x)
+
         return x
 
 
@@ -298,6 +419,51 @@ class SwinTransformerBlock(nn.Module):
         return flops
 
 
+class MetaFormerBlock(nn.Module):
+    """
+    Implementation of one MetaFormer block.
+    """
+    def __init__(self, dim,
+                 token_mixer=nn.Identity, mlp=Mlp,
+                 norm_layer=nn.LayerNorm,
+                 drop=0., drop_path=0.,
+                 layer_scale_init_value=None, res_scale_init_value=None
+                 ):
+
+        super().__init__()
+
+        self.norm1 = norm_layer(dim)
+        self.token_mixer = token_mixer(dim=dim, drop=drop)
+        self.drop_path1 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.layer_scale1 = Scale(dim=dim, init_value=layer_scale_init_value) \
+            if layer_scale_init_value else nn.Identity()
+        self.res_scale1 = Scale(dim=dim, init_value=res_scale_init_value) \
+            if res_scale_init_value else nn.Identity()
+
+        self.norm2 = norm_layer(dim)
+        self.mlp = mlp(dim=dim, drop=drop)
+        self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.layer_scale2 = Scale(dim=dim, init_value=layer_scale_init_value) \
+            if layer_scale_init_value else nn.Identity()
+        self.res_scale2 = Scale(dim=dim, init_value=res_scale_init_value) \
+            if res_scale_init_value else nn.Identity()
+        
+    def forward(self, x):
+        x = self.res_scale1(x) + \
+            self.layer_scale1(
+                self.drop_path1(
+                    self.token_mixer(self.norm1(x))
+                )
+            )
+        x = self.res_scale2(x) + \
+            self.layer_scale2(
+                self.drop_path2(
+                    self.mlp(self.norm2(x))
+                )
+            )
+        return x
+
+
 class PatchMerging(nn.Module):
     r""" Patch Merging Layer.
 
@@ -417,6 +583,52 @@ class BasicLayer(nn.Module):
         return flops
 
 
+class MetaFormerBasicLayer(nn.Module):
+    """ A basic MetaFormer layer for one stage.
+
+    Args:
+        dim (int): Number of input channels.
+        input_resolution (tuple[int]): Input resolution.
+        depth (int): Number of blocks.
+        num_heads (int): Number of attention heads.
+        window_size (int): Local window size.
+        mlp_ratio (float): Ratio of mlp hidden dim to embedding dim.
+        qkv_bias (bool, optional): If True, add a learnable bias to query, key, value. Default: True
+        qk_scale (float | None, optional): Override default qk scale of head_dim ** -0.5 if set.
+        drop (float, optional): Dropout rate. Default: 0.0
+        attn_drop (float, optional): Attention dropout rate. Default: 0.0
+        drop_path (float | tuple[float], optional): Stochastic depth rate. Default: 0.0
+        norm_layer (nn.Module, optional): Normalization layer. Default: nn.LayerNorm
+        downsample (nn.Module | None, optional): Downsample layer at the end of the layer. Default: None
+        use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False.
+    """
+
+    def __init__(self, dim, depth, drop=0., norm_layer=nn.LayerNorm,
+                 token_mixer=nn.Identity, mlp=Mlp, drop_path=0.,
+                 layer_scale_init_value=None, res_scale_init_value=None):
+
+        super().__init__()
+        self.dim = dim
+        self.depth = depth
+
+        # build blocks
+        self.blocks = nn.ModuleList([
+            MetaFormerBlock(dim=dim, 
+                            token_mixer=token_mixer,
+                            mlp=mlp,
+                            norm_layer=norm_layer,
+                            drop=drop,
+                            drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
+                            layer_scale_init_value=layer_scale_init_value,
+                            res_scale_init_value=res_scale_init_value)
+            for i in range(depth)])
+
+    def forward(self, x):
+        for blk in self.blocks:
+            x = blk(x)
+        return x
+
+
 class RSTB(nn.Module):
     """Residual Swin Transformer Block (RSTB).
 
@@ -493,6 +705,63 @@ class RSTB(nn.Module):
         return flops
 
 
+class RMFB(nn.Module):
+    """Residual MetaFormer Block (RMFB).
+
+    Args:
+        dim (int): Number of input channels.
+        input_resolution (tuple[int]): Input resolution.
+        depth (int): Number of blocks.
+        num_heads (int): Number of attention heads.
+        window_size (int): Local window size.
+        mlp_ratio (float): Ratio of mlp hidden dim to embedding dim.
+        qkv_bias (bool, optional): If True, add a learnable bias to query, key, value. Default: True
+        qk_scale (float | None, optional): Override default qk scale of head_dim ** -0.5 if set.
+        drop (float, optional): Dropout rate. Default: 0.0
+        attn_drop (float, optional): Attention dropout rate. Default: 0.0
+        drop_path (float | tuple[float], optional): Stochastic depth rate. Default: 0.0
+        norm_layer (nn.Module, optional): Normalization layer. Default: nn.LayerNorm
+        downsample (nn.Module | None, optional): Downsample layer at the end of the layer. Default: None
+        use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False.
+        img_size: Input image size.
+        patch_size: Patch size.
+        resi_connection: The convolutional block before residual connection.
+    """
+
+    def __init__(self, dim, depth, drop=0., drop_path=0., norm_layer=nn.LayerNorm,
+                 token_mixer=nn.Identity, mlp=Mlp, resi_connection='1conv',
+                 layer_scale_init_value=None, res_scale_init_value=None):
+        super(RMFB, self).__init__()
+
+        self.dim = dim
+
+        self.residual_group = MetaFormerBasicLayer(dim=dim,
+                                                   depth=depth,
+                                                   drop=drop,
+                                                   drop_path=drop_path,
+                                                   norm_layer=norm_layer,
+                                                   token_mixer=token_mixer,
+                                                   mlp=mlp,
+                                                   layer_scale_init_value=layer_scale_init_value,
+                                                   res_scale_init_value=res_scale_init_value)
+
+        if resi_connection == '1conv':
+            self.conv = nn.Conv2d(dim, dim, 3, 1, 1)
+        elif resi_connection == '3conv':
+            # to save parameters and memory
+            self.conv = nn.Sequential(nn.Conv2d(dim, dim // 4, 3, 1, 1), nn.LeakyReLU(negative_slope=0.2, inplace=True),
+                                      nn.Conv2d(dim // 4, dim // 4, 1, 1, 0),
+                                      nn.LeakyReLU(negative_slope=0.2, inplace=True),
+                                      nn.Conv2d(dim // 4, dim, 3, 1, 1))
+
+        self.patch_embed = PatchEmbed(embed_dim=dim, norm_layer=None)
+
+        self.patch_unembed = PatchUnEmbed(embed_dim=dim, norm_layer=None)
+
+    def forward(self, x):
+        return self.patch_embed(self.conv(self.patch_unembed(self.residual_group(x)))) + x
+
+
 class PatchEmbed(nn.Module):
     r""" Image to Patch Embedding
 
@@ -504,17 +773,8 @@ class PatchEmbed(nn.Module):
         norm_layer (nn.Module, optional): Normalization layer. Default: None
     """
 
-    def __init__(self, img_size=224, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None):
+    def __init__(self, embed_dim=96, norm_layer=None):
         super().__init__()
-        img_size = to_2tuple(img_size)
-        patch_size = to_2tuple(patch_size)
-        patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]
-        self.img_size = img_size
-        self.patch_size = patch_size
-        self.patches_resolution = patches_resolution
-        self.num_patches = patches_resolution[0] * patches_resolution[1]
-
-        self.in_chans = in_chans
         self.embed_dim = embed_dim
 
         if norm_layer is not None:
@@ -528,13 +788,6 @@ class PatchEmbed(nn.Module):
             x = self.norm(x)
         return x
 
-    def flops(self):
-        flops = 0
-        H, W = self.img_size
-        if self.norm is not None:
-            flops += H * W * self.embed_dim
-        return flops
-
 
 class PatchUnEmbed(nn.Module):
     r""" Image to Patch Unembedding
@@ -547,22 +800,15 @@ class PatchUnEmbed(nn.Module):
         norm_layer (nn.Module, optional): Normalization layer. Default: None
     """
 
-    def __init__(self, img_size=224, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None):
+    def __init__(self, embed_dim=96, norm_layer=None):
         super().__init__()
-        img_size = to_2tuple(img_size)
-        patch_size = to_2tuple(patch_size)
-        patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]
-        self.img_size = img_size
-        self.patch_size = patch_size
-        self.patches_resolution = patches_resolution
-        self.num_patches = patches_resolution[0] * patches_resolution[1]
-
-        self.in_chans = in_chans
         self.embed_dim = embed_dim
 
-    def forward(self, x, x_size):
+    def forward(self, x):
         B, HW, C = x.shape
-        x = x.transpose(1, 2).view(B, self.embed_dim, x_size[0], x_size[1])  # B Ph*Pw C
+        H = int(math.sqrt(HW))
+        W = H
+        x = x.transpose(1, 2).view(B, C, H, W)  # B Ph*Pw C
         return x
 
     def flops(self):
@@ -644,13 +890,37 @@ class SwinIR(nn.Module):
         resi_connection: The convolutional block before residual connection. '1conv'/'3conv'
     """
 
-    def __init__(self, in_chans=3, scale=4, burst_size=14, drop_rate=0.,
+    def __init__(self, in_chans=3, scale=4, burst_size=14, drop_rate=0., out_chans=3,
                  embed_dim=64, depths=[6, 6, 6, 6], drop_path_rate=0.,
-                 norm_layer=nn.LayerNorm, resi_connection='1conv', **kwargs):
+                 norm_layer=nn.LayerNorm, resi_connection='1conv',
+                 token_mixers=SepConv, mlps=LeFF, layer_scale_init_values=None,
+                 res_scale_init_values=None, **kwargs):
         super(SwinIR, self).__init__()
+        if not isinstance(depths, (list, tuple)):
+            depths = [depths] # it means the model has only one stage
+
+        num_stage = len(depths)
+        self.num_stage = num_stage
+
+        if not isinstance(token_mixers, (list, tuple)):
+            token_mixers = [token_mixers] * num_stage
+
+        if not isinstance(mlps, (list, tuple)):
+            mlps = [mlps] * num_stage
+
+        if not isinstance(layer_scale_init_values, (list, tuple)):
+            layer_scale_init_values = [layer_scale_init_values] * num_stage
+
+        if not isinstance(res_scale_init_values, (list, tuple)):
+            res_scale_init_values = [res_scale_init_values] * num_stage
+
         num_in_ch = in_chans
-        num_out_ch = in_chans
+        num_out_ch = out_chans
         num_feat = 64
+        self.burst_size = burst_size
+        self.scale = scale
+        self.token_mixers = token_mixers
+        self.mlps = mlps
         #####################################################################################################
         ################################### 1, head & body & tail & fusion ###################################
         conv = default_conv
@@ -664,16 +934,16 @@ class SwinIR(nn.Module):
             ) for _ in range(n_resblocks)
         ]
 
-        self.fusion = TSAFusion(num_feat=embed_dim, num_frame=self.num_frames)
+        self.fusion = TSAFusion(num_feat=embed_dim, num_frame=self.burst_size)
 
-        m_tail = [
-            Upsampler(conv, scale, embed_dim, act=False),
-            conv(embed_dim, in_chans, kernel_size=3)
-        ]
+        # m_tail = [
+        #     Upsampler(conv, scale, embed_dim, act=False),
+        #     conv(embed_dim, in_chans, kernel_size=3)
+        # ]
 
         self.head = nn.Sequential(*m_head)
         self.body = nn.Sequential(*m_body)
-        self.tail = nn.Sequential(*m_tail)
+        # self.tail = nn.Sequential(*m_tail)
 
         #####################################################################################################
         ################################### 2, deep feature extraction ######################################
@@ -682,10 +952,10 @@ class SwinIR(nn.Module):
         self.num_features = embed_dim
 
         # split image into non-overlapping patches
-        self.patch_embed = PatchEmbed(in_chans=embed_dim, embed_dim=embed_dim)
+        self.patch_embed = PatchEmbed(embed_dim=embed_dim, norm_layer=None)
 
         # merge non-overlapping patches into image
-        self.patch_unembed = PatchUnEmbed(in_chans=embed_dim, embed_dim=embed_dim)
+        self.patch_unembed = PatchUnEmbed(embed_dim=embed_dim, norm_layer=None)
 
         self.pos_drop = nn.Dropout(p=drop_rate)
 
@@ -695,11 +965,16 @@ class SwinIR(nn.Module):
         # build Residual Swin Transformer blocks (RSTB)
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
-            layer = RSTB(dim=embed_dim,
+            layer = RMFB(dim=embed_dim,
                          depth=depths[i_layer],
                          drop=drop_rate,
                          drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],  # no impact on SR results
                          norm_layer=norm_layer,
+                         token_mixer=token_mixers[i_layer],
+                         mlp=mlps[i_layer],
+                         resi_connection=resi_connection,
+                         layer_scale_init_value=layer_scale_init_values[i_layer],
+                         res_scale_init_value=res_scale_init_values[i_layer]
                          )
             self.layers.append(layer)
         self.norm = norm_layer(self.num_features)
@@ -749,10 +1024,18 @@ class SwinIR(nn.Module):
 
         self.apply(self._init_weights)
 
+    # def _init_weights(self, m):
+    #     if isinstance(m, nn.Linear):
+    #         trunc_normal_(m.weight, std=.02)
+    #         if isinstance(m, nn.Linear) and m.bias is not None:
+    #             nn.init.constant_(m.bias, 0)
+    #     elif isinstance(m, nn.LayerNorm):
+    #         nn.init.constant_(m.bias, 0)
+    #         nn.init.constant_(m.weight, 1.0)
     def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
+        if isinstance(m, (nn.Conv2d, nn.Linear)):
             trunc_normal_(m.weight, std=.02)
-            if isinstance(m, nn.Linear) and m.bias is not None:
+            if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
@@ -766,23 +1049,15 @@ class SwinIR(nn.Module):
     def no_weight_decay_keywords(self):
         return {'relative_position_bias_table'}
 
-    def check_image_size(self, x):
-        _, _, h, w = x.size()
-        mod_pad_h = (self.window_size - h % self.window_size) % self.window_size
-        mod_pad_w = (self.window_size - w % self.window_size) % self.window_size
-        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
-        return x
-
     def forward_features(self, x):
-        x_size = (x.shape[2], x.shape[3])
         x = self.patch_embed(x)
         x = self.pos_drop(x)
 
         for layer in self.layers:
-            x = layer(x, x_size)
+            x = layer(x)
 
         x = self.norm(x)  # B L C
-        x = self.patch_unembed(x, x_size)
+        x = self.patch_unembed(x)
 
         return x
 
@@ -836,41 +1111,26 @@ class SwinIR(nn.Module):
         #     res = self.conv_after_body(self.forward_features(x_first)) + x_first
         #     x = x + self.conv_last(res)
         
-        x = self.conv_after_body(self.forward_features(fusion_feat)) + fusion_feat
-        x = self.conv_before_upsample(x)
-        x = self.conv_last(self.upsample(x))
+        y = self.conv_after_body(self.forward_features(fusion_feat)) + fusion_feat
+        y = self.conv_before_upsample(y)
+        y = self.conv_last(self.upsample(y))
 
         base = F.interpolate(x_base, scale_factor=x_base_scale, mode='bilinear', align_corners=False)
 
         # x = x / self.img_range + self.mean
 
         # return x[:, :, :H*self.upscale, :W*self.upscale]
-        output = x + base
+        output = y + base
         return output
-
-    def flops(self):
-        flops = 0
-        H, W = self.patches_resolution
-        flops += H * W * 3 * self.embed_dim * 9
-        flops += self.patch_embed.flops()
-        for i, layer in enumerate(self.layers):
-            flops += layer.flops()
-        flops += H * W * 3 * self.embed_dim * self.embed_dim
-        flops += self.upsample.flops()
-        return flops
 
 
 if __name__ == '__main__':
-    upscale = 4
-    window_size = 8
-    height = (1024 // upscale // window_size + 1) * window_size
-    width = (720 // upscale // window_size + 1) * window_size
-    model = SwinIR(upscale=2, img_size=(height, width),
-                   window_size=window_size, img_range=1., depths=[6, 6, 6, 6],
-                   embed_dim=60, num_heads=[6, 6, 6, 6], mlp_ratio=2, upsampler='pixelshuffledirect')
-    print(model)
-    print(height, width, model.flops() / 1e9)
+    from fvcore.nn import flop_count_table, FlopCountAnalysis, ActivationCountAnalysis    
+    x = torch.randn(1, 14, 3, 160, 160)
 
-    x = torch.randn((1, 3, height, width))
-    x = model(x)
-    print(x.shape)
+    model = SwinIR(embed_dim=64, depths=[6, 6, 6, 6], token_mixers=SepConv, mlps=LeFF)
+    print(model)
+    print(f'params: {sum(map(lambda x: x.numel(), model.parameters()))}')
+    print(flop_count_table(FlopCountAnalysis(model, x), activations=ActivationCountAnalysis(model, x)))
+    output = model(x)
+    print(output.shape)

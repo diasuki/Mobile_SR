@@ -63,4 +63,4 @@ log/
 tmp*.txt
 wait*.sh
 debug*.py
-tmp/
+tmp*/
