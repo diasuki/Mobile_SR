@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.common import default_conv, Upsampler, ResBlock, TSAFusion
+from models.common import default_conv, Upsampler, ResBlock, TSAFusion, NewFusion
 
 import math
 
@@ -194,6 +194,121 @@ class UNet(nn.Module):
         self.body = nn.Sequential(*[ResBlock(conv, dim, 3) for _ in range(2)])
         # self.body = nn.Identity()
         self.fusion = TSAFusion(num_feat=dim, num_frame=burst_size)
+
+        self.ConvBlock1 = ConvBlock(dim, dim, strides=1, first=True)
+        self.pool1 = nn.Conv2d(dim, dim, kernel_size=4, stride=2, padding=1)
+
+        self.ConvBlock2 = ConvBlock(dim, dim, strides=1)
+        self.pool2 = nn.Conv2d(dim, dim, kernel_size=4, stride=2, padding=1)
+
+        self.ConvBlock3 = ConvBlock(dim, dim, strides=1)
+        self.pool3 = nn.Conv2d(dim, dim, kernel_size=4, stride=2, padding=1)
+
+        self.ConvBlock4 = ConvBlock(dim, dim, strides=1)
+        self.pool4 = nn.Conv2d(dim, dim, kernel_size=4, stride=2, padding=1)
+
+        self.ConvBlock5 = ConvBlock(dim, dim, strides=1)
+
+        self.upv6 = nn.ConvTranspose2d(dim, dim, 2, stride=2)
+        self.ConvBlock6 = ConvBlock(dim*2, dim, strides=1)
+
+        self.upv7 = nn.ConvTranspose2d(dim, dim, 2, stride=2)
+        self.ConvBlock7 = ConvBlock(dim*2, dim, strides=1)
+
+        self.upv8 = nn.ConvTranspose2d(dim, dim, 2, stride=2)
+        self.ConvBlock8 = ConvBlock(dim*2, dim, strides=1)
+
+        self.upv9 = nn.ConvTranspose2d(dim, dim, 2, stride=2)
+        self.ConvBlock9 = ConvBlock(dim*2, dim, strides=1)
+
+        # self.ConvBlock10 = ConvBlock(dim, dim, strides=1)
+        self.upsample = Upsampler(default_conv, scale, dim)
+
+        self.conv_last = nn.Conv2d(dim, self.out_channel,
+                                   kernel_size=3, stride=1, padding=1)
+
+    def forward(self, x, x_base=None):
+        b, t, c, h, w = x.size()
+        assert t == 14, 'Frame should be 14!'
+        assert c == self.in_channel, f'In channels should be {self.in_channel}!'
+
+        if x_base is None:
+            x_base = x[:, 0, :, :, :].contiguous()
+            x_base_scale = self.scale
+        else:
+            x_base_scale = self.scale // 2
+
+        x_feat_head = self.head(x.view(-1, c, h, w))  # [b*t, dim, h, w]
+        x_feat_body = self.body(x_feat_head)  # [b*t, dim, h, w]
+        feat = x_feat_body.view(b, t, -1, h, w)   # [b, t, dim, h, w]
+        fusion_feat = self.fusion(feat)   # fusion feat [b, dim, h, w]
+
+        conv1 = self.ConvBlock1(fusion_feat)
+        pool1 = self.pool1(conv1)
+
+        conv2 = self.ConvBlock2(pool1)
+        pool2 = self.pool2(conv2)
+
+        conv3 = self.ConvBlock3(pool2)
+        pool3 = self.pool3(conv3)
+
+        conv4 = self.ConvBlock4(pool3)
+        pool4 = self.pool4(conv4)
+
+        conv5 = self.ConvBlock5(pool4)
+
+        up6 = self.upv6(conv5)
+        up6 = torch.cat([up6, conv4], 1)
+        conv6 = self.ConvBlock6(up6)
+
+        up7 = self.upv7(conv6)
+        up7 = torch.cat([up7, conv3], 1)
+        conv7 = self.ConvBlock7(up7)
+
+        up8 = self.upv8(conv7)
+        up8 = torch.cat([up8, conv2], 1)
+        conv8 = self.ConvBlock8(up8)
+
+        up9 = self.upv9(conv8)
+        up9 = torch.cat([up9, conv1], 1)
+        conv9 = self.ConvBlock9(up9)
+
+        up10 = self.upsample(conv9)
+        out = self.conv_last(up10)
+
+        base = F.interpolate(x_base, scale_factor=x_base_scale,
+                             mode='bilinear', align_corners=False)
+        out = base + out
+
+        return out
+
+class UNet_NewFusion(nn.Module):
+
+    def __init__(self, dim=64, burst_size=14, in_channel=3, out_channel=3, scale=4, conv_block='res2'):
+        super(UNet_NewFusion, self).__init__()
+
+        self.dim = dim
+        self.in_channel = in_channel
+        # self.out_channel = in_channel if out_channel is None else out_channel
+        self.out_channel = out_channel
+        self.scale = scale
+
+        conv = default_conv
+        if conv_block == 'pares4':
+            ConvBlock = PreActResBlock4
+        elif conv_block == 'pares4_new':
+            ConvBlock = PreActResBlock4_new
+        elif conv_block == 'pares4_bn':
+            ConvBlock = PreActBNResBlock4
+        elif conv_block == 'res2':
+            ConvBlock = ResBlock2
+        else:
+            raise NotImplementedError()
+
+        self.head = conv(in_channel, dim, 3)
+        self.body = nn.Sequential(*[ResBlock(conv, dim, 3) for _ in range(2)])
+        # self.body = nn.Identity()
+        self.fusion = NewFusion(num_feat=dim, num_frame=burst_size)
 
         self.ConvBlock1 = ConvBlock(dim, dim, strides=1, first=True)
         self.pool1 = nn.Conv2d(dim, dim, kernel_size=4, stride=2, padding=1)

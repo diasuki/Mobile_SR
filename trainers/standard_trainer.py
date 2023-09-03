@@ -64,6 +64,16 @@ class StandardTrainer(BaseTrainer):
         self.add_meter('loss', 'L', loop_id=training_loop, fstr_format='7.4f')
         if self.opt.gw_loss_weight:
             self.add_meter('loss_gw', 'Lgw', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.fft_loss_weight:
+            self.add_meter('loss_fft', 'Lfft', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.lpips_loss_weight:
+            self.add_meter('loss_lpips', 'Llpips', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.loss1_weight:
+            self.add_meter('loss1', 'L1', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.loss2_weight:
+            self.add_meter('loss2', 'L2', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.loss3_weight:
+            self.add_meter('loss3', 'L3', loop_id=training_loop, fstr_format='7.4f')
         if self.opt.log_train_psnr:
             self.add_meter('PSNR', fstr_format='7.4f')
         else:
@@ -149,6 +159,22 @@ class StandardTrainer(BaseTrainer):
             criterion_fft = self.criterions['fft']
             loss_fft = criterion_fft(images_restored, images_HR)
             loss += loss_fft
+        if self.opt.lpips_loss_weight:
+            criterion_lpips = self.criterions['lpips']
+            loss_lpips = criterion_lpips(images_restored, images_HR)
+            loss += self.opt.lpips_loss_weight * loss_lpips
+        if self.opt.loss1_weight:
+            criterion_loss1 = self.criterions['loss1']
+            loss_loss1 = criterion_loss1(images_restored, images_HR)
+            loss += self.opt.loss1_weight * loss_loss1
+        if self.opt.loss2_weight:
+            criterion_loss2 = self.criterions['loss2']
+            loss_loss2 = criterion_loss2(images_restored, images_HR)
+            loss += self.opt.loss2_weight * loss_loss2
+        if self.opt.loss3_weight:
+            criterion_loss3 = self.criterions['loss3']
+            loss_loss3 = criterion_loss3(images_restored, images_HR)
+            loss += self.opt.loss3_weight * loss_loss3
 
         loss /= n_accum_steps
         loss.backward()
@@ -158,6 +184,16 @@ class StandardTrainer(BaseTrainer):
         self.loop_meters['loss'].update(loss)
         if self.opt.gw_loss_weight:
             self.loop_meters['loss_gw'].update(loss_gw)
+        if self.opt.fft_loss_weight:
+            self.loop_meters['loss_fft'].update(loss_fft)
+        if self.opt.lpips_loss_weight:
+            self.loop_meters['loss_lpips'].update(loss_lpips)
+        if self.opt.loss1_weight:
+            self.loop_meters['loss1'].update(loss_loss1)
+        if self.opt.loss2_weight:
+            self.loop_meters['loss2'].update(loss_loss2)
+        if self.opt.loss3_weight:
+            self.loop_meters['loss3'].update(loss_loss3)
         if self.opt.log_train_psnr:
             if self.aligned:
                 psnr_tmp, ssim_tmp, lpips_tmp = self.aligned_psnr(images_restored, images_HR)

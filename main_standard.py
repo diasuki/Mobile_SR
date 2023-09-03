@@ -9,7 +9,7 @@ from torch.nn.parallel import DistributedDataParallel
 from utils.experiman import manager
 from data import *
 from models import get_model
-from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss, L1_with_CX, AlignedL1, AlignedGWLoss, FFTLoss
+from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss, L1_with_CX, AlignedL1, AlignedGWLoss, FFTLoss, LPIPS_loss, Loss1, Loss2, Loss3
 from trainers import StandardTrainer, LoopConfig
 from utils.misc import parse
 from utils.optim import get_optim
@@ -50,6 +50,10 @@ def add_parser_argument(parser):
     parser.add_argument('--adaptive', action='store_true')
     parser.add_argument('--lapgw_loss_weight', type=float)
     parser.add_argument('--fft_loss_weight', type=float)
+    parser.add_argument('--lpips_loss_weight', type=float)
+    parser.add_argument('--loss1_weight', type=float)
+    parser.add_argument('--loss2_weight', type=float)
+    parser.add_argument('--loss3_weight', type=float)
     ## ==================== Optimization ======================
     parser.add_argument('--epoch', default=200, type=int)
     parser.add_argument('--num_iters_train', type=int,
@@ -181,6 +185,14 @@ def main():
         criterions['lapgw'] = LapGWLoss()
     if opt.fft_loss_weight:
         criterions['fft'] = FFTLoss(loss_weight=opt.fft_loss_weight)
+    if opt.lpips_loss_weight:
+        criterions['lpips'] = LPIPS_loss()
+    if opt.loss1_weight:
+        criterions['loss1'] = Loss1()
+    if opt.loss2_weight:
+        criterions['loss2'] = Loss2()
+    if opt.loss3_weight:
+        criterions['loss3'] = Loss3()
     print(criterions)
     for criterion in criterions.values():
         criterion.to(device)
