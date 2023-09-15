@@ -68,12 +68,24 @@ class StandardTrainer(BaseTrainer):
             self.add_meter('loss_fft', 'Lfft', loop_id=training_loop, fstr_format='7.4f')
         if self.opt.lpips_loss_weight:
             self.add_meter('loss_lpips', 'Llpips', loop_id=training_loop, fstr_format='7.4f')
-        if self.opt.loss1_weight:
-            self.add_meter('loss1', 'L1', loop_id=training_loop, fstr_format='7.4f')
-        if self.opt.loss2_weight:
-            self.add_meter('loss2', 'L2', loop_id=training_loop, fstr_format='7.4f')
-        if self.opt.loss3_weight:
-            self.add_meter('loss3', 'L3', loop_id=training_loop, fstr_format='7.4f')
+        # if self.opt.loss1_weight:
+        #     self.add_meter('loss1', 'L1', loop_id=training_loop, fstr_format='7.4f')
+        # if self.opt.loss2_weight:
+        #     self.add_meter('loss2', 'L2', loop_id=training_loop, fstr_format='7.4f')
+        # if self.opt.loss3_weight:
+        #     self.add_meter('loss3', 'L3', loop_id=training_loop, fstr_format='7.4f')
+        # if self.opt.loss4_weight:
+        #     self.add_meter('loss4', 'L4', loop_id=training_loop, fstr_format='7.4f')
+        # if self.opt.loss5_weight:
+        #     self.add_meter('loss5', 'L5', loop_id=training_loop, fstr_format='7.4f')
+        # if self.opt.loss6_weight:
+        #     self.add_meter('loss6', 'L6', loop_id=training_loop, fstr_format='7.4f')
+        # if self.opt.loss7_weight:
+        #     self.add_meter('loss7', 'L7', loop_id=training_loop, fstr_format='7.4f')
+        # if self.opt.loss8_weight:
+        #     self.add_meter('loss8', 'L8', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.lw_loss_weight:
+            self.add_meter('loss_lw', 'Llw', loop_id=training_loop, fstr_format='7.4f')
         if self.opt.log_train_psnr:
             self.add_meter('PSNR', fstr_format='7.4f')
         else:
@@ -163,18 +175,42 @@ class StandardTrainer(BaseTrainer):
             criterion_lpips = self.criterions['lpips']
             loss_lpips = criterion_lpips(images_restored, images_HR)
             loss += self.opt.lpips_loss_weight * loss_lpips
-        if self.opt.loss1_weight:
-            criterion_loss1 = self.criterions['loss1']
-            loss_loss1 = criterion_loss1(images_restored, images_HR)
-            loss += self.opt.loss1_weight * loss_loss1
-        if self.opt.loss2_weight:
-            criterion_loss2 = self.criterions['loss2']
-            loss_loss2 = criterion_loss2(images_restored, images_HR)
-            loss += self.opt.loss2_weight * loss_loss2
-        if self.opt.loss3_weight:
-            criterion_loss3 = self.criterions['loss3']
-            loss_loss3 = criterion_loss3(images_restored, images_HR)
-            loss += self.opt.loss3_weight * loss_loss3
+        # if self.opt.loss1_weight:
+        #     criterion_loss1 = self.criterions['loss1']
+        #     loss_loss1 = criterion_loss1(images_restored, images_HR)
+        #     loss += self.opt.loss1_weight * loss_loss1
+        # if self.opt.loss2_weight:
+        #     criterion_loss2 = self.criterions['loss2']
+        #     loss_loss2 = criterion_loss2(images_restored, images_HR)
+        #     loss += self.opt.loss2_weight * loss_loss2
+        # if self.opt.loss3_weight:
+        #     criterion_loss3 = self.criterions['loss3']
+        #     loss_loss3 = criterion_loss3(images_restored, images_HR)
+        #     loss += self.opt.loss3_weight * loss_loss3
+        # if self.opt.loss4_weight:
+        #     criterion_loss4 = self.criterions['loss4']
+        #     loss_loss4 = criterion_loss4(images_restored, images_HR)
+        #     loss += self.opt.loss4_weight * loss_loss4
+        # if self.opt.loss5_weight:
+        #     criterion_loss5 = self.criterions['loss5']
+        #     loss_loss5 = criterion_loss5(images_restored, images_HR)
+        #     loss += self.opt.loss5_weight * loss_loss5
+        # if self.opt.loss6_weight:
+        #     criterion_loss6 = self.criterions['loss6']
+        #     loss_loss6 = criterion_loss6(images_restored, images_HR)
+        #     loss += self.opt.loss6_weight * loss_loss6
+        # if self.opt.loss7_weight:
+        #     criterion_loss7 = self.criterions['loss7']
+        #     loss_loss7 = criterion_loss7(images_restored, images_HR)
+        #     loss += self.opt.loss7_weight * loss_loss7
+        # if self.opt.loss8_weight:
+        #     criterion_loss8 = self.criterions['loss8']
+        #     loss_loss8 = criterion_loss8(images_restored, images_HR)
+        #     loss += self.opt.loss8_weight * loss_loss8
+        if self.opt.lw_loss_weight:
+            criterion_lw = self.criterions['lw']
+            loss_lw = criterion_lw(images_restored, images_HR)
+            loss += self.opt.lw_loss_weight * loss_lw
 
         loss /= n_accum_steps
         loss.backward()
@@ -188,12 +224,24 @@ class StandardTrainer(BaseTrainer):
             self.loop_meters['loss_fft'].update(loss_fft)
         if self.opt.lpips_loss_weight:
             self.loop_meters['loss_lpips'].update(loss_lpips)
-        if self.opt.loss1_weight:
-            self.loop_meters['loss1'].update(loss_loss1)
-        if self.opt.loss2_weight:
-            self.loop_meters['loss2'].update(loss_loss2)
-        if self.opt.loss3_weight:
-            self.loop_meters['loss3'].update(loss_loss3)
+        # if self.opt.loss1_weight:
+        #     self.loop_meters['loss1'].update(loss_loss1)
+        # if self.opt.loss2_weight:
+        #     self.loop_meters['loss2'].update(loss_loss2)
+        # if self.opt.loss3_weight:
+        #     self.loop_meters['loss3'].update(loss_loss3)
+        # if self.opt.loss4_weight:
+        #     self.loop_meters['loss4'].update(loss_loss4)
+        # if self.opt.loss5_weight:
+        #     self.loop_meters['loss5'].update(loss_loss5)
+        # if self.opt.loss6_weight:
+        #     self.loop_meters['loss6'].update(loss_loss6)
+        # if self.opt.loss7_weight:
+        #     self.loop_meters['loss7'].update(loss_loss7)
+        # if self.opt.loss8_weight:
+        #     self.loop_meters['loss8'].update(loss_loss8)
+        if self.opt.lw_loss_weight:
+            self.loop_meters['loss_lw'].update(loss_lw)
         if self.opt.log_train_psnr:
             if self.aligned:
                 psnr_tmp, ssim_tmp, lpips_tmp = self.aligned_psnr(images_restored, images_HR)

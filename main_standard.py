@@ -9,7 +9,7 @@ from torch.nn.parallel import DistributedDataParallel
 from utils.experiman import manager
 from data import *
 from models import get_model
-from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss, L1_with_CX, AlignedL1, AlignedGWLoss, FFTLoss, LPIPS_loss, Loss1, Loss2, Loss3
+from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss, L1_with_CX, AlignedL1, AlignedGWLoss, FFTLoss, LPIPS_loss, LWLoss #, Loss1, Loss2, Loss3, Loss4, Loss5, Loss6, Loss7, Loss8
 from trainers import StandardTrainer, LoopConfig
 from utils.misc import parse
 from utils.optim import get_optim
@@ -51,9 +51,19 @@ def add_parser_argument(parser):
     parser.add_argument('--lapgw_loss_weight', type=float)
     parser.add_argument('--fft_loss_weight', type=float)
     parser.add_argument('--lpips_loss_weight', type=float)
-    parser.add_argument('--loss1_weight', type=float)
-    parser.add_argument('--loss2_weight', type=float)
-    parser.add_argument('--loss3_weight', type=float)
+    # parser.add_argument('--loss1_weight', type=float)
+    # parser.add_argument('--loss2_weight', type=float)
+    # parser.add_argument('--loss3_weight', type=float)
+    # parser.add_argument('--loss4_weight', type=float)
+    # parser.add_argument('--loss4_lambda_weight', type=float)
+    # parser.add_argument('--loss5_weight', type=float)
+    # parser.add_argument('--loss5_lambda_weight', type=float)
+    # parser.add_argument('--loss6_weight', type=float)
+    # parser.add_argument('--loss7_weight', type=float)
+    # parser.add_argument('--loss7_lambda_weight', type=float)
+    # parser.add_argument('--loss8_weight', type=float)
+    # parser.add_argument('--loss8_lambda_weight', type=float)
+    parser.add_argument('--lw_loss_weight', type=float)
     ## ==================== Optimization ======================
     parser.add_argument('--epoch', default=200, type=int)
     parser.add_argument('--num_iters_train', type=int,
@@ -187,12 +197,24 @@ def main():
         criterions['fft'] = FFTLoss(loss_weight=opt.fft_loss_weight)
     if opt.lpips_loss_weight:
         criterions['lpips'] = LPIPS_loss()
-    if opt.loss1_weight:
-        criterions['loss1'] = Loss1()
-    if opt.loss2_weight:
-        criterions['loss2'] = Loss2()
-    if opt.loss3_weight:
-        criterions['loss3'] = Loss3()
+    # if opt.loss1_weight:
+    #     criterions['loss1'] = Loss1()
+    # if opt.loss2_weight:
+    #     criterions['loss2'] = Loss2()
+    # if opt.loss3_weight:
+    #     criterions['loss3'] = Loss3()
+    # if opt.loss4_weight:
+    #     criterions['loss4'] = Loss4(lambda_weight=opt.loss4_lambda_weight)
+    # if opt.loss5_weight:
+    #     criterions['loss5'] = Loss5(lambda_weight=opt.loss5_lambda_weight)
+    # if opt.loss6_weight:
+    #     criterions['loss6'] = Loss6()
+    # if opt.loss7_weight:
+    #     criterions['loss7'] = Loss7(lambda_weight=opt.loss7_lambda_weight)
+    # if opt.loss8_weight:
+    #     criterions['loss8'] = Loss8(lambda_weight=opt.loss8_lambda_weight)
+    if opt.lw_loss_weight:
+        criterions['lw'] = LWLoss()
     print(criterions)
     for criterion in criterions.values():
         criterion.to(device)
