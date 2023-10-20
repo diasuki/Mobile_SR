@@ -9,7 +9,7 @@ from torch.nn.parallel import DistributedDataParallel
 from utils.experiman import manager
 from data import *
 from models import get_model
-from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss, L1_with_CX, AlignedL1, AlignedGWLoss, FFTLoss, LPIPS_loss, LWLoss #, Loss1, Loss2, Loss3, Loss4, Loss5, Loss6, Loss7, Loss8
+from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss, L1_with_CX, AlignedL1, AlignedGWLoss, FFTLoss, LPIPS_loss, LWLoss, SR_Residual_Loss, SR_Residual_GWLoss #, Loss1, Loss2, Loss3, Loss4, Loss5, Loss6, Loss7, Loss8
 from trainers import StandardTrainer, LoopConfig
 from utils.misc import parse
 from utils.optim import get_optim
@@ -64,6 +64,8 @@ def add_parser_argument(parser):
     # parser.add_argument('--loss8_weight', type=float)
     # parser.add_argument('--loss8_lambda_weight', type=float)
     parser.add_argument('--lw_loss_weight', type=float)
+    parser.add_argument('--sr_residual_loss_weight', type=float)
+    parser.add_argument('--sr_residual_gwloss_weight', type=float)
     ## ==================== Optimization ======================
     parser.add_argument('--epoch', default=200, type=int)
     parser.add_argument('--num_iters_train', type=int,
@@ -197,6 +199,10 @@ def main():
         criterions['fft'] = FFTLoss(loss_weight=opt.fft_loss_weight)
     if opt.lpips_loss_weight:
         criterions['lpips'] = LPIPS_loss()
+    if opt.sr_residual_loss_weight:
+        criterions['sr_residual'] = SR_Residual_Loss()
+    if opt.sr_residual_gwloss_weight:
+        criterions['sr_residual_gw'] = SR_Residual_GWLoss()
     # if opt.loss1_weight:
     #     criterions['loss1'] = Loss1()
     # if opt.loss2_weight:

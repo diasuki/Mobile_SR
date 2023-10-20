@@ -54,6 +54,7 @@ class StandardTrainer(BaseTrainer):
         self.alignment_net = alignment_net
         if self.aligned:
             self.aligned_psnr = AlignedPSNR(alignment_net=alignment_net, boundary_ignore=40)
+        self.sr_residuals = None
         self.setup_meters()
     
     def setup_meters(self):
@@ -86,6 +87,10 @@ class StandardTrainer(BaseTrainer):
         #     self.add_meter('loss8', 'L8', loop_id=training_loop, fstr_format='7.4f')
         if self.opt.lw_loss_weight:
             self.add_meter('loss_lw', 'Llw', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.sr_residual_loss_weight:
+            self.add_meter('loss_sr_residual', 'Lsr', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.sr_residual_gwloss_weight:
+            self.add_meter('loss_sr_residual_gw', 'Lsrgw', loop_id=training_loop, fstr_format='7.4f')
         if self.opt.log_train_psnr:
             self.add_meter('PSNR', fstr_format='7.4f')
         else:
@@ -154,8 +159,11 @@ class StandardTrainer(BaseTrainer):
             # print('base')
         else:
             base_frame = None
-
+        
         images_restored = model(images_LR, base_frame)
+
+        if epoch_id > 0 and epoch_id % 10 == 0:
+            self.sr_residuals = torch.abs(images_HR - images_restored).clone().detach()
 
         criterion = self.criterions['reconstruction']
         loss = criterion(images_restored, images_HR)
@@ -211,6 +219,14 @@ class StandardTrainer(BaseTrainer):
             criterion_lw = self.criterions['lw']
             loss_lw = criterion_lw(images_restored, images_HR)
             loss += self.opt.lw_loss_weight * loss_lw
+        if self.opt.sr_residual_loss_weight:
+            criterion_sr_residual = self.criterions['sr_residual']
+            loss_sr_residual = criterion_sr_residual(images_restored, images_HR, self.sr_residuals)
+            loss += self.opt.sr_residual_loss_weight * loss_sr_residual
+        if self.opt.sr_residual_gwloss_weight:
+            criterion_sr_residual_gw = self.criterions['sr_residual_gw']
+            loss_sr_residual_gw = criterion_sr_residual_gw(images_restored, images_HR, self.sr_residuals)
+            loss += self.opt.sr_residual_gwloss_weight * loss_sr_residual_gw
 
         loss /= n_accum_steps
         loss.backward()
@@ -242,6 +258,10 @@ class StandardTrainer(BaseTrainer):
         #     self.loop_meters['loss8'].update(loss_loss8)
         if self.opt.lw_loss_weight:
             self.loop_meters['loss_lw'].update(loss_lw)
+        if self.opt.sr_residual_loss_weight:
+            self.loop_meters['loss_sr_residual'].update(loss_sr_residual)
+        if self.opt.sr_residual_gwloss_weight:
+            self.loop_meters['loss_sr_residual_gw'].update(loss_sr_residual_gw)
         if self.opt.log_train_psnr:
             if self.aligned:
                 psnr_tmp, ssim_tmp, lpips_tmp = self.aligned_psnr(images_restored, images_HR)

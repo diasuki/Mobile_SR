@@ -12,6 +12,10 @@ def get_model(arch, dim, burst_size, in_channel, scale):
         from .unet import UNet_NewFusion
         model = UNet_NewFusion(dim=dim, burst_size=burst_size,
                      in_channel=in_channel, scale=scale, conv_block=arch[15:])
+    elif arch.startswith('dn_unet'):
+        from .unet import UNet_DN
+        model = UNet_DN(dim=dim, burst_size=burst_size,
+                     in_channel=in_channel, scale=scale, conv_block=arch[8:])
     elif arch.startswith('swinir'):
         from .swinir import SwinIR
         model = SwinIR(embed_dim=dim, burst_size=burst_size, in_chans=in_channel, scale=scale)
