@@ -350,5 +350,11 @@ class StandardTester(StandardTrainer):
                     filename = f'{burst_name}-{self.opt.run_name}.png'
                     path = os.path.join(self.images_dir, filename)
                     img.save(path)
+            elif self.opt.image_space == 'QuadRAW':
+                for image_restored, burst_name in zip(images_restored, burst_names):
+                    img = TF.to_pil_image(image_restored)
+                    filename = f'{burst_name}-{self.opt.run_name}.png'
+                    path = os.path.join(self.images_dir, filename)
+                    img.save(path)
             else:
                 raise NotImplementedError(f"Unknown image space: {self.opt.image_space}")

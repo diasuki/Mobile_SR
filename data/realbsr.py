@@ -10,6 +10,8 @@ import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
 import colour_demosaicing
+from libtiff import TIFF
+from libtiff import TIFFfile
 
 from data.base import BaseDataset, get_dataloader, stratified_random_split
 # from utils.dataset_utils import Augment_RGB_torch
@@ -423,3 +425,183 @@ class DIV2KDataset(BaseDataset):
                       num_replicas=world_size, rank=rank)
         loader = get_dataloader(dataset, shuffle=is_train, drop_last=is_train, **kwargs)
         return loader
+
+
+class QuadRealBSRDataset(BaseDataset):
+
+    def __init__(self, data_dir, space='RGB', size=160, burst_size=14):
+        #data_dir:/mnt/SSD2_512GB/szy/dataset/realbsr_quad_align
+        super().__init__(data_dir, size)
+        self._RGBDataset = RealBSR
+        self._RAWDataset = QuadRealBSRRAW
+        # self.dir = 'RealBSR'
+        self.space = space
+        self.burst_size = burst_size
+
+    def get_loader(self, batch_size, num_workers, split='val',
+                   world_size=1, rank=0):
+        is_train = (split == 'train')
+        # data_dir = os.path.join(self.data_dir, self.dir, self.space)
+        data_dir = self.data_dir
+        if self.space == 'RGB':
+            dataset = self._RGBDataset(data_dir, self.size, self.burst_size, split)
+        else:
+            dataset = self._RAWDataset(data_dir, self.size, self.burst_size, split)
+        kwargs = dict(batch_size=batch_size, num_workers=num_workers,
+                      num_replicas=world_size, rank=rank)
+        loader = get_dataloader(dataset, shuffle=is_train, drop_last=is_train, **kwargs)
+        return loader
+
+
+class QuadRealBSRRAW(RealBSR):
+
+    def __init__(self, root, crop_sz=64, burst_size=14, split='train'):
+        super().__init__(root, crop_sz, burst_size, split)
+        #        root:/mnt/SSD2_512GB/szy/dataset/realbsr_quad_align
+        #   meta_info:root/test/000_0023/000_0023_meta.pkl
+        # lr_filename:root/test/000_0023/000_MFSR_Sony_0023_x1_00_quad.tif
+        # hr_filename:root/test/000_0023/000_MFSR_Sony_0023_x4warp.png
+        self.lr_filename = '{}/{}/{}_MFSR_Sony_{:04d}_x1_{:02d}_quad'
+        self.hr_filename = '{}/{}/{}_MFSR_Sony_{:04d}_x4warp'
+        # self.hr_filename_quad = '{}/{}/{}_MFSR_Sony_{:04d}_x4warp_quad'
+        #burst_list=['000_0023','000_0036'...]
+    def _get_raw_image(self, burst_id, im_id):
+        # .../RealBSR/RAW/test/031_0430/031_MFSR_Sony_0430_x1_09.png
+        # lr_filename:root/test/000_0023/000_MFSR_Sony_0023_x1_00_quad.tif
+        burst_number = self.burst_list[burst_id].split('_')[0]
+        burst_number2 = int(self.burst_list[burst_id].split('_')[-1])
+        name = self.lr_filename.format(
+            self.lrdir, self.burst_list[burst_id], burst_number, burst_number2, im_id)
+        ############# read lr_tif.tif########################
+        lr_tif_path='%s.tif' % (name)
+        tif = TIFFfile(lr_tif_path)
+        samples, _ = tif.get_samples()
+        input_data=samples[0]#[40,40,16]
+        image = torch.from_numpy(input_data.astype(np.float32)).float() / (2**14)
+        img=image.permute(2,0,1)
+        # image = F.interpolate(image.unsqueeze(0), scale_factor=2, mode="bicubic")[0]
+        ############# read lr_raw.png########################
+        # img = cv2.imread(f'{name}.png', cv2.IMREAD_UNCHANGED)  # [H/2, W/2, 4]
+        # image = torch.from_numpy(img.astype(np.float32)).permute(2, 0, 1)  # [4, H/2, W/2]
+        # # substract black level
+        # if self.substract_black_level:
+        #     image = image - 512.
+        # # normalize to [0, 1]
+        # image = image / 16383.
+
+        return img
+    # def _get_gray_image(self, burst_id, im_id):
+    #     # .../RealBSR/RAW/test/031_0430/031_MFSR_Sony_0430_x1_09.png
+    #     # lr_filename:root/test/000_0023/000_MFSR_Sony_0023_x1_00_quad.tif
+    #     burst_number = self.burst_list[burst_id].split('_')[0]
+    #     burst_number2 = int(self.burst_list[burst_id].split('_')[-1])
+    #     name = self.lr_filename.format(
+    #         self.lrdir, self.burst_list[burst_id], burst_number, burst_number2, im_id)
+    #     ############# read lr_tif.tif########################
+    #     lr_tif_path='%s.tif' % (name)
+    #     tif = TIFFfile(lr_tif_path)
+    #     samples, _ = tif.get_samples()
+    #     input_data=samples[0]#[40,40,16]
+    #     image = torch.from_numpy(input_data.astype(np.float32)).float() / (2**14)
+    #     # image = F.interpolate(image.unsqueeze(0), scale_factor=2, mode="bicubic")[0]
+    #     h,w,c=image.shape
+    #     num_channels = image.shape[-1] // 4  # 计算输出通道数
+    #     output_data = torch.zeros(2*h,2*w,c//4)
+    #     # print(output_data.shape)
+    #     for i in range(4):
+    #         output_data[..., i] = flatten_raw_image(image[..., i * 4 : (i + 1) * 4].permute(2,0,1))
+    #     output_data=output_data.permute(2,0,1)
+    #     #### rggb->cfa
+    #     gray_img=get_gray_image(output_data)
+    #     ############# read lr_raw.png########################
+    #     # img = cv2.imread(f'{name}.png', cv2.IMREAD_UNCHANGED)  # [H/2, W/2, 4]
+    #     # image = torch.from_numpy(img.astype(np.float32)).permute(2, 0, 1)  # [4, H/2, W/2]
+    #     # # substract black level
+    #     # if self.substract_black_level:
+    #     #     image = image - 512.
+    #     # # normalize to [0, 1]
+    #     # image = image / 16383.
+
+    #     return gray_img
+
+    def _get_gt_image(self, burst_id):
+        #burst_id 表示文件夹的id
+        # .../RealBSR/RAW/test/031_0430/031_MFSR_Sony_0430_x4_rgb.png
+        burst_number = self.burst_list[burst_id].split('_')[0]#000
+        burst_nmber2 = int(self.burst_list[burst_id].split('_')[-1])#0023
+        ##self.hrdir=root/train
+        name = self.hr_filename.format(
+            self.hrdir, self.burst_list[burst_id], burst_number, burst_nmber2)
+        # name_hr_quad = self.hr_filename_quad.format(
+        #     self.hrdir, self.burst_list[burst_id], burst_number, burst_nmber2)
+        ################## get rgb_hr#################
+        image = Image.open(f'{name}.png')  # RGB,W, H, C
+        image = self.transform(image)
+        
+        ################## get raw_hr##################
+        # hr_tif_path='%s.tif' % (name_hr_quad)
+        # tif = TIFFfile(hr_tif_path)
+        # samples, _ = tif.get_samples()
+        # input_data=samples[0]#[40,40,16]
+        # gt_quad = torch.from_numpy(input_data.astype(np.float32)).float() / (2**14)
+        # gt_quad=gt_quad.permute(2,0,1)
+        ################## get meta ##################
+        
+        # meta_info:root/test/000_0023/000_0023_meta.pkl
+        pkl_path = '{}/{}/{}_{:04d}_meta.pkl'.format(self.hrdir, self.burst_list[burst_id], burst_number, burst_nmber2)
+        # img = cv2.imread(f'{name}.png', cv2.IMREAD_UNCHANGED)#hr_rgb_image
+        # image = torch.from_numpy(img.astype(np.float32)).permute(2, 0, 1)  # [3, H, W]
+        # # substract black level
+        # if self.substract_black_level:
+        #     image = image - 512.
+        # # normalize to [0, 1]
+        # image = image / 16383.
+
+        return image, pkl_path
+        # return image,gt_quad, pkl_path
+
+    def get_burst(self, burst_id, im_ids):
+        frames = [self._get_raw_image(burst_id, i) for i in im_ids]
+        # grays = [self._get_gray_image(burst_id, i) for i in im_ids]
+        # pic = self._get_raw_image(burst_id, 0)
+        gt,pkl_path = self._get_gt_image(burst_id)
+        return frames, gt, pkl_path
+
+    def __getitem__(self, index):
+        # Sample the images in the burst, in case a burst_size < 14 is used.
+        im_ids = self._sample_images()
+
+        frames, gt, pkl_path = self.get_burst(index, im_ids)
+        info = self.get_burst_info(index)
+
+        if self.split == 'train':
+            apply_trans = transforms_aug[random.getrandbits(3)]
+            frames = [getattr(augment, apply_trans)(im) for im in frames]
+            # grays = [getattr(augment, apply_trans)(im) for im in grays]
+            gt = getattr(augment, apply_trans)(gt)
+            # gt_quad = getattr(augment, apply_trans)(gt_quad)
+
+        burst = torch.stack(frames, dim=0)
+        # grays = torch.stack(grays, dim=0)
+        burst = burst.float()
+        # grays = grays.float()
+        frame_gt = gt.float()
+        # frame_gt_quad = gt_quad.float()
+
+        data = {}
+        data['LR'] = burst
+        # data['LR_grays'] = grays
+        data['HR'] = frame_gt
+        # data['HR_quad'] = frame_gt_quad
+        data['burst_name'] = info['burst_name']
+
+        # base frame
+        base_frame=data['LR'][0]
+        # flattened_image = flatten_raw_image(data['LR'][0])
+        # demosaiced_image = colour_demosaicing.demosaicing_CFA_Bayer_Menon2007(flattened_image.numpy())
+        # base_frame = torch.clamp(torch.from_numpy(demosaiced_image).type_as(flattened_image),
+        #                          min=0.0, max=1.0).permute(2, 0, 1)
+        data['base frame'] = base_frame
+        data['pkl_path'] = pkl_path
+
+        return data

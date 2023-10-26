@@ -12,6 +12,14 @@ def get_model(arch, dim, burst_size, in_channel, scale):
         from .unet import UNet_NewFusion
         model = UNet_NewFusion(dim=dim, burst_size=burst_size,
                      in_channel=in_channel, scale=scale, conv_block=arch[15:])
+    elif arch.startswith('quadraw_unet'):
+        from .unet import UNet_QuadRAW
+        model = UNet_QuadRAW(dim=dim, burst_size=burst_size,
+                     in_channel=in_channel, scale=scale, conv_block=arch[13:])
+    elif arch.startswith('quadraw_newfusion_unet'):
+        from .unet import UNet_NewFusion_QuadRAW
+        model = UNet_NewFusion_QuadRAW(dim=dim, burst_size=burst_size,
+                     in_channel=in_channel, scale=scale, conv_block=arch[23:])
     elif arch.startswith('dn_unet'):
         from .unet import UNet_DN
         model = UNet_DN(dim=dim, burst_size=burst_size,
