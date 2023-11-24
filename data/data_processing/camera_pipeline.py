@@ -148,6 +148,38 @@ def mosaic(image, mode='rggb'):
         return image.view((-1, 4, shape[-2] // 2, shape[-1] // 2))
 
 
+def mosaic_quad(img,mode='bggr_quad'):
+    if mode=='gbrg_quad':
+        c1,c2,c3,c4=[1,2,0,1]
+    elif mode=='grbg_quad':
+        c1,c2,c3,c4=[1,0,2,1]
+    elif mode=='bggr_quad':
+        c1,c2,c3,c4=[2,1,1,0]
+    else:
+        raise ValueError("wrong mode!")
+    mosaic_img=torch.zeros((int(img.shape[0]/4),int(img.shape[1]/4),16),dtype=img.dtype)
+    mosaic_img[:,:,0]=img[0::4,0::4,c1]
+    mosaic_img[:,:,1]=img[0::4,1::4,c1]
+    mosaic_img[:,:,2]=img[1::4,0::4,c1]
+    mosaic_img[:,:,3]=img[1::4,1::4,c1]
+
+    mosaic_img[:,:,4]=img[0::4,2::4,c2]
+    mosaic_img[:,:,5]=img[0::4,3::4,c2]
+    mosaic_img[:,:,6]=img[1::4,2::4,c2]
+    mosaic_img[:,:,7]=img[1::4,3::4,c2]
+
+    mosaic_img[:,:,8]=img[2::4,0::4,c3]
+    mosaic_img[:,:,9]=img[2::4,1::4,c3]
+    mosaic_img[:,:,10]=img[3::4,0::4,c3]
+    mosaic_img[:,:,11]=img[3::4,1::4,c3]
+
+    mosaic_img[:,:,12]=img[2::4,2::4,c4]
+    mosaic_img[:,:,13]=img[2::4,3::4,c4]
+    mosaic_img[:,:,14]=img[3::4,2::4,c4]
+    mosaic_img[:,:,15]=img[3::4,3::4,c4]
+    return mosaic_img
+
+
 def demosaic(image):
     assert isinstance(image, torch.Tensor)
     image = image.clamp(0.0, 1.0) * 255

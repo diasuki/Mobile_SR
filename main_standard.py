@@ -9,7 +9,7 @@ from torch.nn.parallel import DistributedDataParallel
 from utils.experiman import manager
 from data import *
 from models import get_model
-from losses import GWLoss, CharbonnierLoss, L1_with_CoBi, Adaptive_GWLoss, LapGWLoss, L1_with_CX, AlignedL1, AlignedGWLoss, FFTLoss, LPIPS_loss, LWLoss, SR_Residual_Loss, SR_Residual_GWLoss #, Loss1, Loss2, Loss3, Loss4, Loss5, Loss6, Loss7, Loss8
+from losses import GWLoss, CharbonnierLoss, Adaptive_GWLoss, LapGWLoss, AlignedL1, AlignedGWLoss, FFTLoss, LPIPS_loss, LWLoss, SR_Residual_Loss, SR_Residual_GWLoss #, Loss1, Loss2, Loss3, Loss4, Loss5, Loss6, Loss7, Loss8
 from trainers import StandardTrainer, LoopConfig
 from utils.misc import parse
 from utils.optim import get_optim
@@ -180,10 +180,10 @@ def main():
             criterions['reconstruction'] = AlignedGWLoss(alignment_net=alignment_net, aligned_gw_loss_weight=opt.aligned_gw_loss_weight, boundary_ignore=40)
         else:
             criterions['reconstruction'] = AlignedL1(alignment_net=alignment_net, boundary_ignore=40)
-    elif opt.cx:
-        criterions['reconstruction'] = L1_with_CX(boundary_ignore=40)
-    elif opt.cobi:
-        criterions['reconstruction'] = L1_with_CoBi(boundary_ignore=40)
+    # elif opt.cx:
+    #     criterions['reconstruction'] = L1_with_CX(boundary_ignore=40)
+    # elif opt.cobi:
+    #     criterions['reconstruction'] = L1_with_CoBi(boundary_ignore=40)
     elif opt.charbonnier:
         criterions['reconstruction'] = CharbonnierLoss()
     else:

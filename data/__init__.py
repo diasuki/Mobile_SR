@@ -1,4 +1,4 @@
-from .realbsr import RealBSRDataset, RealBSRTextDataset, DF2KDataset, DIV2KDataset, QuadRealBSRDataset
+from .realbsr import RealBSRDataset, RealBSRTextDataset, DF2KDataset, DIV2KDataset, QuadRealBSRDataset, QuadDataset
 
 def get_dataset(name, data_dir, **kwargs):
     if name.startswith('SyntheticBurstDF2K'):
@@ -11,5 +11,7 @@ def get_dataset(name, data_dir, **kwargs):
         return RealBSRTextDataset(data_dir, **kwargs)
     elif name == 'QuadRealBSR':
         return QuadRealBSRDataset(data_dir, **kwargs)
+    elif name == 'QuadRealBSR_syn':
+        return QuadDataset(data_dir, **kwargs)
     else:
         raise NotImplementedError()

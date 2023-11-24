@@ -16,9 +16,9 @@ from libtiff import TIFFfile
 from data.base import BaseDataset, get_dataloader, stratified_random_split
 # from utils.dataset_utils import Augment_RGB_torch
 
-from data.datasets.synthetic_burst_train_set import SyntheticBurstRGBAligned
+from data.datasets.synthetic_burst_train_set import SyntheticBurstRGBAligned, SyntheticBurstQuadAligned
 from data.datasets.synthetic_burst_val_set import SyntheticBurstValDF2K
-from data.datasets.zurich_raw2rgb_dataset import DIV2KRGB
+from data.datasets.zurich_raw2rgb_dataset import DIV2KRGB, DIV2KRGB_quad
 
 
 class Augment_RGB_torch:
@@ -605,3 +605,33 @@ class QuadRealBSRRAW(RealBSR):
         data['pkl_path'] = pkl_path
 
         return data
+
+
+class QuadDataset(BaseDataset):
+
+    def __init__(self, data_dir, space='RGB', size=608, burst_size=14):
+        super().__init__(data_dir, size)
+        # assert space=='RGB', 'RGB Space!'
+        self.burst_size = burst_size
+        # self.dir = 'SyntheticBurstDF2K'
+        # self.dir = name
+
+    def get_loader(self, batch_size, num_workers, split='val',
+                   world_size=1, rank=0):
+        is_train = (split == 'train')
+        # data_dir = os.path.join(self.data_dir, self.dir)
+        ###### data_dir="xxxx/",train="xxxx/train"...####
+        data_dir=self.data_dir
+        if split == 'train':
+            dataset = DIV2KRGB_quad("/data1/zq/dataset/DF2Ksub/DF2K_HR_sub")
+            dataset = SyntheticBurstQuadAligned(dataset, burst_size=self.burst_size, crop_sz=self.size)
+        elif split == 'val':
+            ####已有的quad dataset，xxx/test/yyyy_lr.tif && yyyy_hr.png....
+            dataset = QuadRealBSRRAW(data_dir, burst_size=self.burst_size, split=split)
+        else:
+            raise Exception
+
+        kwargs = dict(batch_size=batch_size, num_workers=num_workers,
+                      num_replicas=world_size, rank=rank)
+        loader = get_dataloader(dataset, shuffle=is_train, drop_last=is_train, **kwargs)
+        return loader

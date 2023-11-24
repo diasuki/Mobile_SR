@@ -1,8 +1,9 @@
 trap "exit" INT
-LOG_DIR="/home/zhaoqing/mobile_sr/log/super_resolution/mobile_sr"
+LOG_DIR="/data3/zq1/mobile_sr/log/super_resolution/mobile_sr"
 # LOG_DIR="/data1/zq/mobile_sr/log/super_resolution/mobile_sr"
 # DATA_DIR="/data1/zq/dataset/RealBSR_aligned"
-DATA_DIR="/mnt/SSD1_512GB/szy/quad_aligned"
+DATA_DIR="/data3/zq/dataset/quad_aligned"
+# /data1/zq/dataset/DF2Ksub/DF2K_HR_sub
 # MODEL_DIR="$HOME/model"
 NUM_WORKERS=8
 
@@ -122,6 +123,10 @@ for method in $methods; do
     elif [[ $method = 'quad_pretrain' ]]; then
         $train --run_name $RUN_NAME \
             --dataset QuadRealBSR --image_space $space \
+            "$@"
+    elif [[ $method = 'quad_syn_pretrain' ]]; then
+        $train --run_name $RUN_NAME \
+            --dataset QuadRealBSR_syn --image_space $space \
             "$@"
     fi
 

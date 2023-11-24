@@ -74,3 +74,30 @@ class DIV2KRGB(torch.utils.data.Dataset):
         frame = self._get_image(index)
 
         return frame
+
+
+class DIV2KRGB_quad(torch.utils.data.Dataset):
+    def __init__(self, root):
+        super().__init__()
+
+        self.img_pth = os.path.join(root)
+
+        self.image_list = sorted(os.listdir(self.img_pth))
+
+    def _get_image(self, im_id):
+        path = os.path.join(self.img_pth, self.image_list[im_id])
+        img = imread(path)
+        return img
+
+    def get_image(self, im_id):
+        frame = self._get_image(im_id)
+
+        return frame
+
+    def __len__(self):
+        return len(self.image_list)
+
+    def __getitem__(self, index):
+        frame = self._get_image(index)
+
+        return frame
