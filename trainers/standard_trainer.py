@@ -69,6 +69,8 @@ class StandardTrainer(BaseTrainer):
             self.add_meter('loss_fft', 'Lfft', loop_id=training_loop, fstr_format='7.4f')
         if self.opt.lpips_loss_weight:
             self.add_meter('loss_lpips', 'Llpips', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.msssim_loss_weight:
+            self.add_meter('loss_msssim', 'Lmsssim', loop_id=training_loop, fstr_format='7.4f')
         # if self.opt.loss1_weight:
         #     self.add_meter('loss1', 'L1', loop_id=training_loop, fstr_format='7.4f')
         # if self.opt.loss2_weight:
@@ -183,6 +185,10 @@ class StandardTrainer(BaseTrainer):
             criterion_lpips = self.criterions['lpips']
             loss_lpips = criterion_lpips(images_restored, images_HR)
             loss += self.opt.lpips_loss_weight * loss_lpips
+        if self.opt.msssim_loss_weight:
+            criterion_msssim = self.criterions['msssim']
+            loss_msssim = criterion_msssim(images_restored, images_HR)
+            loss += self.opt.msssim_loss_weight * loss_msssim
         # if self.opt.loss1_weight:
         #     criterion_loss1 = self.criterions['loss1']
         #     loss_loss1 = criterion_loss1(images_restored, images_HR)
@@ -240,6 +246,8 @@ class StandardTrainer(BaseTrainer):
             self.loop_meters['loss_fft'].update(loss_fft)
         if self.opt.lpips_loss_weight:
             self.loop_meters['loss_lpips'].update(loss_lpips)
+        if self.opt.msssim_loss_weight:
+            self.loop_meters['loss_msssim'].update(loss_msssim)
         # if self.opt.loss1_weight:
         #     self.loop_meters['loss1'].update(loss_loss1)
         # if self.opt.loss2_weight:

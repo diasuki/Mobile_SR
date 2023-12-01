@@ -6,6 +6,8 @@
 CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_pretrain 'ep200,lr2e-4,charb' --charbonnier --lr 2e-4 --epoch 200
 # quad bayer baseline + gw
 CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_pretrain 'ep200,lr2e-4,charb,gw3' --charbonnier --gw_loss_weight 3 --lr 2e-4 --epoch 200
+# quad bayer baseline + msssim
+CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_pretrain 'ep200,lr2e-4,charb,msssim1' --charbonnier --msssim_loss_weight 1 --lr 2e-4 --epoch 200
 # quad bayer baseline + newfusion
 CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_newfusion_unet_pares4_new quad_pretrain 'ep200,lr2e-4,charb' --charbonnier --lr 2e-4 --epoch 200
 # quad bayer baseline + pretrain
