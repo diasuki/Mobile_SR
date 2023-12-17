@@ -71,6 +71,12 @@ class StandardTrainer(BaseTrainer):
             self.add_meter('loss_lpips', 'Llpips', loop_id=training_loop, fstr_format='7.4f')
         if self.opt.msssim_loss_weight:
             self.add_meter('loss_msssim', 'Lmsssim', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.msssimgw_loss_weight:
+            self.add_meter('loss_msssimgw', 'Lmsssimgw', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.msssimgwx_loss_weight:
+            self.add_meter('loss_msssimgwx', 'Lmsssimgwx', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.msssimgwy_loss_weight:
+            self.add_meter('loss_msssimgwy', 'Lmsssimgwy', loop_id=training_loop, fstr_format='7.4f')
         # if self.opt.loss1_weight:
         #     self.add_meter('loss1', 'L1', loop_id=training_loop, fstr_format='7.4f')
         # if self.opt.loss2_weight:
@@ -189,6 +195,18 @@ class StandardTrainer(BaseTrainer):
             criterion_msssim = self.criterions['msssim']
             loss_msssim = criterion_msssim(images_restored, images_HR)
             loss += self.opt.msssim_loss_weight * loss_msssim
+        if self.opt.msssimgw_loss_weight:
+            criterion_msssimgw = self.criterions['msssimgw']
+            loss_msssimgw = criterion_msssimgw(images_restored, images_HR)
+            loss += self.opt.msssimgw_loss_weight * loss_msssimgw
+        if self.opt.msssimgwx_loss_weight:
+            criterion_msssimgwx = self.criterions['msssimgwx']
+            loss_msssimgwx = criterion_msssimgwx(images_restored, images_HR)
+            loss += self.opt.msssimgwx_loss_weight * loss_msssimgwx
+        if self.opt.msssimgwy_loss_weight:
+            criterion_msssimgwy = self.criterions['msssimgwy']
+            loss_msssimgwy = criterion_msssimgwy(images_restored, images_HR)
+            loss += self.opt.msssimgwy_loss_weight * loss_msssimgwy
         # if self.opt.loss1_weight:
         #     criterion_loss1 = self.criterions['loss1']
         #     loss_loss1 = criterion_loss1(images_restored, images_HR)
@@ -248,6 +266,12 @@ class StandardTrainer(BaseTrainer):
             self.loop_meters['loss_lpips'].update(loss_lpips)
         if self.opt.msssim_loss_weight:
             self.loop_meters['loss_msssim'].update(loss_msssim)
+        if self.opt.msssimgw_loss_weight:
+            self.loop_meters['loss_msssimgw'].update(loss_msssimgw)
+        if self.opt.msssimgwx_loss_weight:
+            self.loop_meters['loss_msssimgwx'].update(loss_msssimgwx)
+        if self.opt.msssimgwy_loss_weight:
+            self.loop_meters['loss_msssimgwy'].update(loss_msssimgwy)
         # if self.opt.loss1_weight:
         #     self.loop_meters['loss1'].update(loss_loss1)
         # if self.opt.loss2_weight:

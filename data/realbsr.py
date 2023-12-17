@@ -575,6 +575,17 @@ class QuadRealBSRRAW(RealBSR):
         info = self.get_burst_info(index)
 
         if self.split == 'train':
+            # Extract crop if needed
+            scale_factor = gt.shape[-1] // frames[0].shape[-1]
+            if frames[0].shape[-1] != self.crop_sz // scale_factor:
+                r1 = random.randint(0, frames[0].shape[-2] - self.crop_sz // scale_factor)
+                c1 = random.randint(0, frames[0].shape[-1] - self.crop_sz // scale_factor)
+                r2 = r1 + self.crop_sz // scale_factor
+                c2 = c1 + self.crop_sz // scale_factor
+
+                frames = [get_crop(im, r1, r2, c1, c2) for im in frames]
+                gt = get_crop(gt, scale_factor * r1, scale_factor * r2, scale_factor * c1, scale_factor * c2)
+
             apply_trans = transforms_aug[random.getrandbits(3)]
             frames = [getattr(augment, apply_trans)(im) for im in frames]
             # grays = [getattr(augment, apply_trans)(im) for im in grays]

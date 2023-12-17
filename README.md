@@ -51,3 +51,11 @@ CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_une
 2. 合成预训练 : data/realbsr.py 中的 QuadDataset (重点是 data/datasets/synthetic_burst_train_set.py 中的 SyntheticBurstQuadAligned，包含quad bayer多帧数据的生成+多帧数据homography对齐)
 
 3. 模型改进 : models/unet.py 中的 UNet_NewFusion_QuadRAW (Baseline模型是 UNet_QuadRAW)
+
+正在尝试的改进：
+
+1. 改进 MSSSIM Loss
+
+2. 模型改进
+
+3. 合成预训练数据
