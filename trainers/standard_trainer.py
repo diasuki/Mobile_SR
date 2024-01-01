@@ -77,6 +77,8 @@ class StandardTrainer(BaseTrainer):
             self.add_meter('loss_msssimgwx', 'Lmsssimgwx', loop_id=training_loop, fstr_format='7.4f')
         if self.opt.msssimgwy_loss_weight:
             self.add_meter('loss_msssimgwy', 'Lmsssimgwy', loop_id=training_loop, fstr_format='7.4f')
+        if self.opt.gmsssim_loss_weight:
+            self.add_meter('loss_gmsssim', 'Lgmsssim', loop_id=training_loop, fstr_format='7.4f')
         # if self.opt.loss1_weight:
         #     self.add_meter('loss1', 'L1', loop_id=training_loop, fstr_format='7.4f')
         # if self.opt.loss2_weight:
@@ -207,6 +209,10 @@ class StandardTrainer(BaseTrainer):
             criterion_msssimgwy = self.criterions['msssimgwy']
             loss_msssimgwy = criterion_msssimgwy(images_restored, images_HR)
             loss += self.opt.msssimgwy_loss_weight * loss_msssimgwy
+        if self.opt.gmsssim_loss_weight:
+            criterion_gmsssim = self.criterions['gmsssim']
+            loss_gmsssim = criterion_gmsssim(images_restored, images_HR)
+            loss += self.opt.gmsssim_loss_weight * loss_gmsssim
         # if self.opt.loss1_weight:
         #     criterion_loss1 = self.criterions['loss1']
         #     loss_loss1 = criterion_loss1(images_restored, images_HR)
@@ -272,6 +278,8 @@ class StandardTrainer(BaseTrainer):
             self.loop_meters['loss_msssimgwx'].update(loss_msssimgwx)
         if self.opt.msssimgwy_loss_weight:
             self.loop_meters['loss_msssimgwy'].update(loss_msssimgwy)
+        if self.opt.gmsssim_loss_weight:
+            self.loop_meters['loss_gmsssim'].update(loss_gmsssim)
         # if self.opt.loss1_weight:
         #     self.loop_meters['loss1'].update(loss_loss1)
         # if self.opt.loss2_weight:

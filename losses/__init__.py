@@ -7,4 +7,4 @@ from .lpips_loss import LPIPS_loss
 from .loss import Loss1, Loss2, Loss3, Loss4, Loss5, Loss6, Loss7, Loss8, SR_Residual_Loss, SR_Residual_GWLoss
 from .lw_loss import LWLoss
 from .msssim_loss import MSSSIMLoss
-from .msssim_gw_loss import MSSSIMGWLoss, MSSSIMGWLossX, MSSSIMGWLossY
+from .msssim_gw_loss import MSSSIMGWLoss, MSSSIMGWLossX, MSSSIMGWLossY, GMSSSIMLoss

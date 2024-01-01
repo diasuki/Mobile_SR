@@ -30,18 +30,23 @@ CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run.sh train RGB unet_pares4_new pre
 quad bayer相关命令：
 ```bash
 # quad bayer baseline
-CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_pretrain 'ep200,lr2e-4,charb' --charbonnier --lr 2e-4 --epoch 200
+CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_pretrain 'bs32,ps384,ep200,lr2e-4,charb' --charbonnier --lr 2e-4 --epoch 200 --image_size 384 --batch 32
 # quad bayer baseline + gw
-CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_pretrain 'ep200,lr2e-4,charb,gw3' --charbonnier --gw_loss_weight 3 --lr 2e-4 --epoch 200
-# quad bayer baseline + msssim
-CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_pretrain 'ep200,lr2e-4,charb,msssim1' --charbonnier --msssim_loss_weight 1 --lr 2e-4 --epoch 200
+CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_pretrain 'bs32,ps384,ep200,lr2e-4,charb,gw3' --charbonnier --gw_loss_weight 3 --lr 2e-4 --epoch 200 --image_size 384 --batch 32
+# quad bayer baseline + msssim (baseline)
+CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_pretrain 'bs32,ps384,ep200,lr2e-4,charb,msssim1' --charbonnier --msssim_loss_weight 1 --lr 2e-4 --epoch 200 --image_size 384 --batch 32
 # quad bayer baseline + newfusion
-CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_newfusion_unet_pares4_new quad_pretrain 'ep200,lr2e-4,charb' --charbonnier --lr 2e-4 --epoch 200
-# quad bayer baseline + pretrain
+CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_newfusion_unet_pares4_new quad_pretrain 'bs32,ps384,ep200,lr2e-4,charb' --charbonnier --lr 2e-4 --epoch 200 --image_size 384 --batch 32
+## quad bayer baseline + pretrain
 # (pretrain)
 CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_syn_pretrain 'bs64,ps384,ep200,lr2e-4,charb' --charbonnier --lr 2e-4 --epoch 200 --image_size 384 --batch 64
 # (finetune) + gw
 CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_pretrain 'syn(bs64,ps384,ep200,lr2e-4,charb),bs32,ps384,ep200,lr2e-4,charb,gw3' --charbonnier --gw_loss_weight 3 --lr 2e-4 --epoch 200 --image_size 384 --batch 32 --load_run_name 'QuadRAW-quadraw_unet_pares4_new-quad_syn_pretrain-(bs64,ps384,ep200,lr2e-4,charb)'
+## quad bayer baseline + pretrain
+# (pretrain) + msssim
+CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_syn_pretrain 'bs128,ps384,ep200,lr2e-4,charb,msssim1' --charbonnier --msssim_loss_weight 1 --lr 2e-4 --epoch 200 --image_size 384 --batch 128
+# (finetune) + msssim
+CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' bash run_raw.sh train QuadRAW quadraw_unet_pares4_new quad_pretrain 'syn(bs128,ps384,ep200,lr2e-4,charb,msssim1),bs32,ps384,ep200,lr2e-4,charb,msssim1' --charbonnier --msssim_loss_weight 1 --lr 2e-4 --epoch 200 --image_size 384 --batch 32 --load_run_name 'QuadRAW-quadraw_unet_pares4_new-quad_syn_pretrain-(bs128,ps384,ep200,lr2e-4,charb,msssim1)'
 ```
 
 其中的一些改进：

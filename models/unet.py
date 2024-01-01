@@ -591,6 +591,13 @@ class UNet_NewFusion_QuadRAW(nn.Module):
         self.conv_last = nn.Conv2d(dim, self.out_channel,
                                    kernel_size=3, stride=1, padding=1)
 
+    def check_image_size(self, x):
+        _, _, h, w = x.size()
+        mod_pad_h = (16 - h % 16) % 16
+        mod_pad_w = (16 - w % 16) % 16
+        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
+        return x
+
     def forward(self, x, x_base=None):
         b, t, c, h, w = x.size()
         assert t == 14, 'Frame should be 14!'
@@ -602,9 +609,10 @@ class UNet_NewFusion_QuadRAW(nn.Module):
         # else:
         #     x_base_scale = self.scale // 2
 
-        x_feat_head = self.head(x.view(-1, c, h, w))  # [b*t, dim, h, w]
+        x_feat_head = self.head(self.check_image_size(x.view(-1, c, h, w)))  # [b*t, dim, h, w]
         x_feat_body = self.body(x_feat_head)  # [b*t, dim, h, w]
-        feat = x_feat_body.view(b, t, -1, h, w)   # [b, t, dim, h, w]
+        _, _, nh, nw = x_feat_body.shape
+        feat = x_feat_body.view(b, t, -1, nh, nw)   # [b, t, dim, h, w]
         fusion_feat = self.fusion(feat)   # fusion feat [b, dim, h, w]
 
         fusion_feat = self.upsample_prev(fusion_feat)
@@ -646,7 +654,8 @@ class UNet_NewFusion_QuadRAW(nn.Module):
         #                      mode='bilinear', align_corners=False)
         # out = base + out
 
-        return out
+        # return out
+        return out[:, :, :h*self.scale*2, :w*self.scale*2]
 
 class UNet_DN(nn.Module):
 
