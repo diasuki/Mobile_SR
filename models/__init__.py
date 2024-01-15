@@ -16,6 +16,10 @@ def get_model(arch, dim, burst_size, in_channel, scale):
         from .unet import UNet_QuadRAW
         model = UNet_QuadRAW(dim=dim, burst_size=burst_size,
                      in_channel=in_channel, scale=scale, conv_block=arch[13:])
+    elif arch.startswith('quadraw_no_fusion_unet'):
+        from .unet import UNet_NoFusion_QuadRAW
+        model = UNet_NoFusion_QuadRAW(dim=dim, burst_size=burst_size,
+                     in_channel=in_channel, scale=scale, conv_block=arch[23:])
     elif arch.startswith('quadraw_newfusion_unet'):
         from .unet import UNet_NewFusion_QuadRAW
         model = UNet_NewFusion_QuadRAW(dim=dim, burst_size=burst_size,

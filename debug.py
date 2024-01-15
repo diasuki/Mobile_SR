@@ -2,6 +2,7 @@ import torch
 from models import get_model
 from thop import profile
 from thop import clever_format
+from fvcore.nn import flop_count_table, FlopCountAnalysis, ActivationCountAnalysis
 # from models.unet import UNet
 # from data.realbsr import RealBSR
 
@@ -15,8 +16,11 @@ from thop import clever_format
 # model = get_model('safmn', dim=64, burst_size=14, in_channel=3, scale=4)
 # model = get_model('shufflemixer', dim=64, burst_size=14, in_channel=3, scale=4)
 # model = get_model('swinir', dim=64, burst_size=14, in_channel=3, scale=4)
-model = get_model('newfusion_unet_pares4_new', dim=64, burst_size=14, in_channel=3, scale=4)
-print(model)
+# model = get_model('newfusion_unet_pares4_new', dim=64, burst_size=14, in_channel=3, scale=4)
+# model = get_model('quadraw_no_fusion_unet_pares4_new', dim=64, burst_size=14, in_channel=3, scale=4)
+# model = get_model('quadraw_unet_pares4_new', dim=64, burst_size=14, in_channel=3, scale=4)
+model = get_model('quadraw_newfusion_unet_pares4_new', dim=64, burst_size=14, in_channel=3, scale=4)
+# print(model)
 x = torch.randn(1, 14, 3, 160, 160)
 # y = model(x)
 # print(x.shape)
@@ -26,6 +30,9 @@ x = torch.randn(1, 14, 3, 160, 160)
 
 # params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 # print(f"params: {params/10**6}M")
-macs, params = profile(model, inputs=(x, ))
-macs, params = clever_format([macs, params], "%.3f")
-print((macs, params))
+# macs, params = profile(model, inputs=(x, ))
+# macs, params = clever_format([macs, params], "%.3f")
+# print((macs, params))
+
+print(f'params: {sum(map(lambda x: x.numel(), model.parameters()))}')
+print(flop_count_table(FlopCountAnalysis(model, x), activations=ActivationCountAnalysis(model, x)))
