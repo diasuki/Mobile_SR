@@ -693,9 +693,9 @@ class QuadRealBSRRAW(RealBSR):
             self.hrdir, self.burst_list[burst_id], burst_number, burst_nmber2)
         # name_hr_quad = self.hr_filename_quad.format(
         #     self.hrdir, self.burst_list[burst_id], burst_number, burst_nmber2)
-        ################## get rgb_hr#################
-        image = Image.open(f'{name}.png')  # RGB,W, H, C
-        image = self.transform(image)
+        ################## get linear_hr#################
+        image = cv2.imread(f'{name}.png', cv2.IMREAD_UNCHANGED)
+        image = (torch.from_numpy(image.astype(np.float32)) / 2 ** 14).permute(2, 0, 1).float()
         
         ################## get raw_hr##################
         # hr_tif_path='%s.tif' % (name_hr_quad)
@@ -862,9 +862,9 @@ class QuadRealBSRRAWTest(RealBSRTest):
             self.hrdir, self.burst_list[burst_id], burst_number)
         # name_hr_quad = self.hr_filename_quad.format(
         #     self.hrdir, self.burst_list[burst_id], burst_number, burst_nmber2)
-        ################## get rgb_hr#################
-        image = Image.open(f'{name}.png')  # RGB,W, H, C
-        image = self.transform(image)
+        ################## get linear_hr#################
+        image = cv2.imread(f'{name}.png', cv2.IMREAD_UNCHANGED)
+        image = (torch.from_numpy(image.astype(np.float32)) / 2 ** 14).permute(2, 0, 1).float()
         
         ################## get raw_hr##################
         # hr_tif_path='%s.tif' % (name_hr_quad)

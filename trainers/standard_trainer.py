@@ -12,9 +12,9 @@ from utils.metrics import mySSIM as ssim
 from utils.metrics import myLPIPS as lpips
 from utils.metrics import AlignedPSNR
 from utils.post_processing_vis import generate_processed_image_channel3
+from data.utils.postprocessing_functions import SimplePostProcess
 import pickle
 import cv2
-import os
 
 class StandardTrainer(BaseTrainer):
 
@@ -391,10 +391,16 @@ class StandardTester(StandardTrainer):
                     path = os.path.join(self.images_dir, filename)
                     img.save(path)
             elif self.opt.image_space == 'QuadRAW':
-                for image_restored, burst_name in zip(images_restored, burst_names):
-                    img = TF.to_pil_image(image_restored)
+                ###### get linear_sr ######## 
+                pkl_paths = data_batch['pkl_path']
+                postprocess_fn = SimplePostProcess(return_np=True)
+                for image_restored, burst_name,pkl_path in zip(images_restored, burst_names,pkl_paths):
+                    with open(pkl_path, 'rb') as f:
+                        meta_data = pickle.load(f)
                     filename = f'{burst_name}-{self.opt.run_name}.png'
                     path = os.path.join(self.images_dir, filename)
-                    img.save(path)
+                    sr_ = postprocess_fn.process(image_restored, meta_data)
+                    # sr_ = cv2.cvtColor(sr_, cv2.COLOR_RGB2BGR)
+                    cv2.imwrite(path, sr_)
             else:
                 raise NotImplementedError(f"Unknown image space: {self.opt.image_space}")
