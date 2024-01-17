@@ -1,7 +1,7 @@
 import torch
 import numpy as np
-import utils.data_format_utils as df_utils
-from data_processing.camera_pipeline import apply_gains, apply_ccm, apply_smoothstep, gamma_compression
+import data.utils.data_format_utils as df_utils
+from data.data_processing.camera_pipeline import apply_gains, apply_ccm, apply_smoothstep, gamma_compression
 
 
 class SimplePostProcess:
