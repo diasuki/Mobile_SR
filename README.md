@@ -16,7 +16,10 @@
 
 运行命令：
 ```bash
+#train
 CUDA_VISIBLE_DEVICES='0,1,2,3' bash run.sh train RGB unet_pares4_new pretrain 'charb' --charbonnier
+#test
+CUDA_VISIBLE_DEVICES='0,1,2,3' bash run.sh eval RGB unet_pares4_new pretrain 'charb' --charbonnier
 ```
 
 合成预训练：
