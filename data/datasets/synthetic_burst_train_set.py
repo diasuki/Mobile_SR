@@ -568,9 +568,9 @@ class SyntheticBurstQuadAligned(torch.utils.data.Dataset):
         
         data = {}
         data['LR'] = burst
-        # data['HR'] = frame_gt##绿绿的图
-        border = self.burst_transformation_params.get('border_crop', 0)
-        data['HR'] = frame_crop[:, border:-border, border:-border]
+        data['HR'] = frame_gt##绿绿的图
+        # border = self.burst_transformation_params.get('border_crop', 0)
+        # data['HR'] = frame_crop[:, border:-border, border:-border]
         # flattened_image = flatten_raw_image(data['LR'][0])
         # demosaiced_image = colour_demosaicing.demosaicing_CFA_Bayer_Menon2007(flattened_image.numpy())
         # base_frame = torch.clamp(torch.from_numpy(demosaiced_image).type_as(flattened_image),

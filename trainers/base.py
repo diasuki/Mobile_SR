@@ -388,7 +388,7 @@ class BaseTrainer():
                     self.do_step(epoch_id, loop_id, iter_id, phase_id, data_batch)
                 for optimizer in optimizers:
                     optimizer.step()
-                    optimizer.zero_grad()
+                    optimizer.zero_grad(set_to_none=True)
         if config.training:
             self.iter_count += 1
 

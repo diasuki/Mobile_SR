@@ -30,10 +30,10 @@ def get_dataloader(dataset, shuffle=False, drop_last=False, with_index=False, nu
         sampler = DistributedSampler(
             dataset, num_replicas, rank, shuffle=shuffle)
         loader = torch.utils.data.DataLoader(
-            dataset, sampler=sampler, drop_last=drop_last, **kwargs)
+            dataset, sampler=sampler, drop_last=drop_last, pin_memory=True, **kwargs)
     else:
         loader = torch.utils.data.DataLoader(
-            dataset, shuffle=shuffle, drop_last=drop_last, **kwargs)
+            dataset, shuffle=shuffle, drop_last=drop_last, pin_memory=True, **kwargs)
     return loader
 
 
