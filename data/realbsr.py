@@ -963,6 +963,7 @@ class QuadDataset(BaseDataset):
         data_dir=self.data_dir
         if split == 'train':
             dataset = DIV2KRGB_quad("/data1/zq/dataset/DF2Ksub/DF2K_HR_sub")
+            # dataset = DIV2KRGB_quad("/data1/ly/dataset/text_image_x8")
             dataset = SyntheticBurstQuadAligned(dataset, burst_size=self.burst_size, crop_sz=self.size)
         elif split == 'val':
             ####已有的quad dataset，xxx/test/yyyy_lr.tif && yyyy_hr.png....

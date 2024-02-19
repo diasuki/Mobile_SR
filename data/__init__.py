@@ -29,6 +29,6 @@ def get_test_dataset(name, data_dir, **kwargs):
     if name == 'QuadRealBSR':
         return QuadRealBSRDatasetTest(data_dir, **kwargs)
     elif name == 'QuadRealBSR_syn':
-        return QuadDataset(data_dir, **kwargs)
+        return QuadRealBSRDatasetTest(data_dir, **kwargs)
     else:
         raise NotImplementedError()
