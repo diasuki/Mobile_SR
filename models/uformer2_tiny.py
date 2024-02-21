@@ -960,6 +960,309 @@ class Uformer(nn.Module):
         flops += self.output_proj.flops(self.reso,self.reso)
         return flops
 
+class Uformer_QuadRAW(nn.Module):
+    def __init__(self, in_chans=3, scale=4, burst_size=14,
+                 embed_dim=64, depths=[2, 2, 2, 2, 2, 2, 2, 2, 2],
+                 token_mixers=SepConv, mlps=Mlp,
+                #  norm_layers=partial(LayerNormWithoutBias, eps=1e-6), # partial(LayerNormGeneral, eps=1e-6, bias=False),
+                 norm_layers=nn.LayerNorm,
+                 drop_path_rate=0.,
+                 layer_scale_init_values=None,
+                #  res_scale_init_values=[None, None, 1.0, 1.0, 1.0, 1.0, 1.0, None, None],
+                 res_scale_init_values=None,
+                 drop_rate=0.,
+                 dowsample=Downsample, upsample=Upsample, **kwargs):
+        super().__init__()
+
+        if not isinstance(depths, (list, tuple)):
+            depths = [depths] # it means the model has only one stage
+        
+        num_stage = len(depths)
+        self.num_stage = num_stage
+
+        if not isinstance(token_mixers, (list, tuple)):
+            token_mixers = [token_mixers] * num_stage
+
+        if not isinstance(mlps, (list, tuple)):
+            mlps = [mlps] * num_stage
+
+        if not isinstance(norm_layers, (list, tuple)):
+            norm_layers = [norm_layers] * num_stage
+
+        dp_rates=[x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]
+
+        if not isinstance(layer_scale_init_values, (list, tuple)):
+            layer_scale_init_values = [layer_scale_init_values] * num_stage
+        if not isinstance(res_scale_init_values, (list, tuple)):
+            res_scale_init_values = [res_scale_init_values] * num_stage
+        
+        self.scale = scale
+        self.embed_dim = embed_dim
+        self.token_mixers = token_mixers
+        self.mlps = mlps
+        self.pos_drop = nn.Dropout(p=drop_rate)
+        self.num_frames = burst_size
+
+        # Input/Output
+        self.input_proj = InputProj(in_channel=embed_dim, out_channel=embed_dim, kernel_size=3, stride=1, act_layer=nn.LeakyReLU)
+        self.output_proj = OutputProj(in_channel=2*embed_dim, out_channel=embed_dim, kernel_size=3, stride=1)
+
+        conv = default_conv
+        n_resblocks = 2
+
+        m_head = [conv(in_chans, embed_dim, kernel_size=3)]
+
+        m_body = [
+            ResBlock(
+                conv, embed_dim, kernel_size=3
+            ) for _ in range(n_resblocks)
+        ]
+
+        self.fusion = TSAFusion(num_feat=embed_dim, num_frame=self.num_frames)
+
+        self.upsample_prev = Upsampler(default_conv, 2, embed_dim)
+
+        m_tail = [
+            Upsampler(conv, scale, embed_dim, act=False),
+            conv(embed_dim, 3, kernel_size=3)
+        ]
+
+        self.head = nn.Sequential(*m_head)
+        self.body = nn.Sequential(*m_body)
+        self.tail = nn.Sequential(*m_tail)
+
+        # Encoder
+        self.encoderlayer_0 = nn.Sequential(
+                *[MetaFormerBlock(dim=embed_dim,
+                token_mixer=token_mixers[0],
+                mlp=mlps[0],
+                norm_layer=norm_layers[0],
+                drop_path=dp_rates[0 + j],
+                layer_scale_init_value=layer_scale_init_values[0],
+                res_scale_init_value=res_scale_init_values[0],
+                ) for j in range(depths[0])]
+            )
+        self.dowsample_0 = dowsample(embed_dim, embed_dim)
+        self.encoderlayer_1 = nn.Sequential(
+                *[MetaFormerBlock(dim=embed_dim,
+                token_mixer=token_mixers[1],
+                mlp=mlps[1],
+                norm_layer=norm_layers[1],
+                drop_path=dp_rates[1 + j],
+                layer_scale_init_value=layer_scale_init_values[1],
+                res_scale_init_value=res_scale_init_values[1],
+                ) for j in range(depths[1])]
+            )
+        self.dowsample_1 = dowsample(embed_dim, embed_dim)
+        self.encoderlayer_2 = nn.Sequential(
+                *[MetaFormerBlock(dim=embed_dim,
+                token_mixer=token_mixers[2],
+                mlp=mlps[2],
+                norm_layer=norm_layers[2],
+                drop_path=dp_rates[2 + j],
+                layer_scale_init_value=layer_scale_init_values[2],
+                res_scale_init_value=res_scale_init_values[2],
+                ) for j in range(depths[2])]
+            )
+
+        self.dowsample_2 = dowsample(embed_dim, embed_dim)
+        self.encoderlayer_3 = nn.Sequential(
+                *[MetaFormerBlock(dim=embed_dim,
+                token_mixer=token_mixers[3],
+                mlp=mlps[3],
+                norm_layer=norm_layers[3],
+                drop_path=dp_rates[3 + j],
+                layer_scale_init_value=layer_scale_init_values[3],
+                res_scale_init_value=res_scale_init_values[3],
+                ) for j in range(depths[3])]
+            )
+        self.dowsample_3 = dowsample(embed_dim, embed_dim)
+
+        # Bottleneck
+        self.conv = nn.Sequential(
+                *[MetaFormerBlock(dim=embed_dim,
+                token_mixer=token_mixers[4],
+                mlp=mlps[4],
+                norm_layer=norm_layers[4],
+                drop_path=dp_rates[4 + j],
+                layer_scale_init_value=layer_scale_init_values[4],
+                res_scale_init_value=res_scale_init_values[4],
+                ) for j in range(depths[4])]
+            )
+
+        # Decoder
+        self.upsample_0 = upsample(embed_dim, embed_dim)
+        self.decoderlayer_0 = nn.Sequential(
+                *[MetaFormerBlock(dim=embed_dim*2,
+                token_mixer=token_mixers[5],
+                mlp=mlps[5],
+                norm_layer=norm_layers[5],
+                drop_path=dp_rates[5 + j],
+                layer_scale_init_value=layer_scale_init_values[5],
+                res_scale_init_value=res_scale_init_values[5],
+                ) for j in range(depths[5])]
+            )
+        self.upsample_1 = upsample(embed_dim*2, embed_dim)
+        self.decoderlayer_1 = nn.Sequential(
+                *[MetaFormerBlock(dim=embed_dim*2,
+                token_mixer=token_mixers[6],
+                mlp=mlps[6],
+                norm_layer=norm_layers[6],
+                drop_path=dp_rates[6 + j],
+                layer_scale_init_value=layer_scale_init_values[6],
+                res_scale_init_value=res_scale_init_values[6],
+                ) for j in range(depths[6])]
+            )
+        self.upsample_2 = upsample(embed_dim*2, embed_dim)
+        self.decoderlayer_2 = nn.Sequential(
+                *[MetaFormerBlock(dim=embed_dim*2,
+                token_mixer=token_mixers[7],
+                mlp=mlps[7],
+                norm_layer=norm_layers[7],
+                drop_path=dp_rates[7 + j],
+                layer_scale_init_value=layer_scale_init_values[7],
+                res_scale_init_value=res_scale_init_values[7],
+                ) for j in range(depths[7])]
+            )
+        self.upsample_3 = upsample(embed_dim*2, embed_dim)
+        self.decoderlayer_3 = nn.Sequential(
+                *[MetaFormerBlock(dim=embed_dim*2,
+                token_mixer=token_mixers[8],
+                mlp=mlps[8],
+                norm_layer=norm_layers[8],
+                drop_path=dp_rates[8 + j],
+                layer_scale_init_value=layer_scale_init_values[8],
+                res_scale_init_value=res_scale_init_values[8],
+                ) for j in range(depths[8])]
+            )
+
+        self.apply(self._init_weights)
+
+    # def _init_weights(self, m):
+    #     if isinstance(m, nn.Linear):
+    #         trunc_normal_(m.weight, std=.02)
+    #         if isinstance(m, nn.Linear) and m.bias is not None:
+    #             nn.init.constant_(m.bias, 0)
+    #     elif isinstance(m, nn.LayerNorm):
+    #         nn.init.constant_(m.bias, 0)
+    #         nn.init.constant_(m.weight, 1.0)
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.Linear)):
+            trunc_normal_(m.weight, std=.02)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return {'absolute_pos_embed'}
+
+    @torch.jit.ignore
+    def no_weight_decay_keywords(self):
+        return {'relative_position_bias_table'}
+
+    def extra_repr(self) -> str:
+        return f"embed_dim={self.embed_dim}, token_mixers={self.token_mixers}, mlps={self.mlps}"
+    
+    def check_image_size(self, x):
+        _, _, h, w = x.size()
+        mod_pad_h = (16 - h % 16) % 16
+        mod_pad_w = (16 - w % 16) % 16
+        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
+        return x
+
+    def forward(self, x, x_base=None):
+        # Input Multi-Frame Conv
+        b, t, c, h, w = x.size()
+        # assert t == 14, 'Frame should be 14!'
+        # assert c == 3, 'In channels should be 3!'
+
+        # if x_base is None:
+        #     x_base = x[:, 0, :, :, :].contiguous()
+        #     x_base_scale = self.scale
+        # else:
+        #     x_base_scale = self.scale // 2
+
+        x_feat_head = self.head(self.check_image_size(x.view(-1, c, h, w)))  # [b*t, dim, h, w]
+        x_feat_body = self.body(x_feat_head)  # [b*t, dim, h, w]
+        _, _, nh, nw = x_feat_body.shape
+        feat = x_feat_body.view(b, t, -1, nh, nw)   # [b, t, dim, h, w]
+        fusion_feat = self.fusion(feat)   # fusion feat [b, dim, h, w]
+
+        fusion_feat = self.upsample_prev(fusion_feat)
+
+        # Input Projection
+        y = self.input_proj(fusion_feat)   # B, H*W, C
+        y = self.pos_drop(y)
+
+        #Encoder
+        conv0 = self.encoderlayer_0(y)
+        pool0 = self.dowsample_0(conv0)
+        conv1 = self.encoderlayer_1(pool0)
+        pool1 = self.dowsample_1(conv1)
+
+        conv2 = self.encoderlayer_2(pool1)
+        pool2 = self.dowsample_2(conv2)
+        conv3 = self.encoderlayer_3(pool2)
+        pool3 = self.dowsample_3(conv3)
+
+        # Bottleneck
+        conv4 = self.conv(pool3)
+
+        #Decoder
+        up0 = self.upsample_0(conv4)
+        deconv0 = torch.cat([up0,conv3],-1)
+        deconv0 = self.decoderlayer_0(deconv0)
+
+        up1 = self.upsample_1(deconv0)
+        deconv1 = torch.cat([up1,conv2],-1)
+        deconv1 = self.decoderlayer_1(deconv1)
+
+        up2 = self.upsample_2(deconv1)
+        deconv2 = torch.cat([up2,conv1],-1)
+        deconv2 = self.decoderlayer_2(deconv2)
+
+        up3 = self.upsample_3(deconv2)
+        deconv3 = torch.cat([up3,conv0],-1)
+        deconv3 = self.decoderlayer_3(deconv3)
+
+        # Output Projection
+        y = self.output_proj(deconv3)
+
+        output = self.tail(y)
+
+        # base = F.interpolate(x_base, scale_factor=x_base_scale, mode='bilinear', align_corners=False)
+
+        # out = output + base
+
+        # return out
+        return output[:, :, :h*self.scale*2, :w*self.scale*2]
+
+    def flops(self):
+        flops = 0
+        # Input Projection
+        flops += self.input_proj.flops(self.reso,self.reso)
+        # Encoder
+        flops += self.encoderlayer_0.flops()+self.dowsample_0.flops(self.reso,self.reso)
+        flops += self.encoderlayer_1.flops()+self.dowsample_1.flops(self.reso//2,self.reso//2)
+        flops += self.encoderlayer_2.flops()+self.dowsample_2.flops(self.reso//2**2,self.reso//2**2)
+        flops += self.encoderlayer_3.flops()+self.dowsample_3.flops(self.reso//2**3,self.reso//2**3)
+
+        # Bottleneck
+        flops += self.conv.flops()
+
+        # Decoder
+        flops += self.upsample_0.flops(self.reso//2**4,self.reso//2**4)+self.decoderlayer_0.flops()
+        flops += self.upsample_1.flops(self.reso//2**3,self.reso//2**3)+self.decoderlayer_1.flops()
+        flops += self.upsample_2.flops(self.reso//2**2,self.reso//2**2)+self.decoderlayer_2.flops()
+        flops += self.upsample_3.flops(self.reso//2,self.reso//2)+self.decoderlayer_3.flops()
+
+        # Output Projection
+        flops += self.output_proj.flops(self.reso,self.reso)
+        return flops
+
 if __name__ == "__main__":
     # arch = Uformer
     # input_size = 256

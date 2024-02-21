@@ -43,6 +43,18 @@ def get_model(arch, dim, burst_size, in_channel, scale):
             model = SAFMN(dim=dim, burst_size=burst_size, in_channel=in_channel, scale=scale)
         else:
             raise NotImplementedError(f"Unknown arch: {arch}")
+    elif arch.startswith('quadraw_uformer2_tiny'):
+        from .uformer2_tiny import Uformer_QuadRAW, LeFF, Anti_FFN
+        from .uformer2_tiny import SepConv
+        kernel_size = arch.rsplit('_')[-1]
+        kernel_size = int(kernel_size) if kernel_size.isnumeric() else 3
+        mlp_arch = arch[14:]
+        if mlp_arch.startswith('leff'):
+            model = Uformer_QuadRAW(token_mixers=partial(SepConv, kernel_size=kernel_size, padding=kernel_size//2), mlps=LeFF, in_chans=in_channel, scale=scale, embed_dim=dim, burst_size=burst_size)
+        elif mlp_arch.startswith('anti'):
+            model = Uformer_QuadRAW(token_mixers=partial(SepConv, kernel_size=kernel_size, padding=kernel_size//2), mlps=Anti_FFN, in_chans=in_channel, scale=scale, embed_dim=dim, burst_size=burst_size)
+        else:
+            model = Uformer_QuadRAW(token_mixers=partial(SepConv, kernel_size=kernel_size, padding=kernel_size//2), in_chans=in_channel, scale=scale, embed_dim=dim, burst_size=burst_size)
     elif arch.startswith('uformer2_tiny'):
         from .uformer2_tiny import Uformer, LeFF, Anti_FFN
         from .uformer2_tiny import SepConv
