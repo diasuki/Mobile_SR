@@ -1124,6 +1124,278 @@ class SwinIR(nn.Module):
         return output
 
 
+class SwinIR_QuadRAW(nn.Module):
+    r""" SwinIR
+        A PyTorch impl of : `SwinIR: Image Restoration Using Swin Transformer`, based on Swin Transformer.
+
+    Args:
+        img_size (int | tuple(int)): Input image size. Default 64
+        patch_size (int | tuple(int)): Patch size. Default: 1
+        in_chans (int): Number of input image channels. Default: 3
+        embed_dim (int): Patch embedding dimension. Default: 96
+        depths (tuple(int)): Depth of each Swin Transformer layer.
+        num_heads (tuple(int)): Number of attention heads in different layers.
+        window_size (int): Window size. Default: 7
+        mlp_ratio (float): Ratio of mlp hidden dim to embedding dim. Default: 4
+        qkv_bias (bool): If True, add a learnable bias to query, key, value. Default: True
+        qk_scale (float): Override default qk scale of head_dim ** -0.5 if set. Default: None
+        drop_rate (float): Dropout rate. Default: 0
+        attn_drop_rate (float): Attention dropout rate. Default: 0
+        drop_path_rate (float): Stochastic depth rate. Default: 0.1
+        norm_layer (nn.Module): Normalization layer. Default: nn.LayerNorm.
+        ape (bool): If True, add absolute position embedding to the patch embedding. Default: False
+        patch_norm (bool): If True, add normalization after patch embedding. Default: True
+        use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False
+        upscale: Upscale factor. 2/3/4/8 for image SR, 1 for denoising and compress artifact reduction
+        img_range: Image range. 1. or 255.
+        upsampler: The reconstruction reconstruction module. 'pixelshuffle'/'pixelshuffledirect'/'nearest+conv'/None
+        resi_connection: The convolutional block before residual connection. '1conv'/'3conv'
+    """
+
+    def __init__(self, in_chans=3, scale=4, burst_size=14, drop_rate=0., out_chans=3,
+                 embed_dim=64, depths=[6, 6, 6, 6], drop_path_rate=0.,
+                 norm_layer=nn.LayerNorm, resi_connection='1conv',
+                 token_mixers=SepConv, mlps=LeFF, layer_scale_init_values=None,
+                 res_scale_init_values=None, **kwargs):
+        super(SwinIR_QuadRAW, self).__init__()
+        if not isinstance(depths, (list, tuple)):
+            depths = [depths] # it means the model has only one stage
+
+        num_stage = len(depths)
+        self.num_stage = num_stage
+
+        if not isinstance(token_mixers, (list, tuple)):
+            token_mixers = [token_mixers] * num_stage
+
+        if not isinstance(mlps, (list, tuple)):
+            mlps = [mlps] * num_stage
+
+        if not isinstance(layer_scale_init_values, (list, tuple)):
+            layer_scale_init_values = [layer_scale_init_values] * num_stage
+
+        if not isinstance(res_scale_init_values, (list, tuple)):
+            res_scale_init_values = [res_scale_init_values] * num_stage
+
+        num_in_ch = in_chans
+        num_out_ch = out_chans
+        num_feat = 64
+        self.burst_size = burst_size
+        self.scale = scale
+        self.token_mixers = token_mixers
+        self.mlps = mlps
+        #####################################################################################################
+        ################################### 1, head & body & tail & fusion ###################################
+        conv = default_conv
+        n_resblocks = 2
+
+        m_head = [conv(num_in_ch, embed_dim, kernel_size=3)]
+
+        m_body = [
+            ResBlock(
+                conv, embed_dim, kernel_size=3
+            ) for _ in range(n_resblocks)
+        ]
+
+        self.fusion = TSAFusion(num_feat=embed_dim, num_frame=self.burst_size)
+
+        self.upsample_prev = Upsampler(default_conv, 2, embed_dim)
+
+        # m_tail = [
+        #     Upsampler(conv, scale, embed_dim, act=False),
+        #     conv(embed_dim, in_chans, kernel_size=3)
+        # ]
+
+        self.head = nn.Sequential(*m_head)
+        self.body = nn.Sequential(*m_body)
+        # self.tail = nn.Sequential(*m_tail)
+
+        #####################################################################################################
+        ################################### 2, deep feature extraction ######################################
+        self.num_layers = len(depths)
+        self.embed_dim = embed_dim
+        self.num_features = embed_dim
+
+        # split image into non-overlapping patches
+        self.patch_embed = PatchEmbed(embed_dim=embed_dim, norm_layer=None)
+
+        # merge non-overlapping patches into image
+        self.patch_unembed = PatchUnEmbed(embed_dim=embed_dim, norm_layer=None)
+
+        self.pos_drop = nn.Dropout(p=drop_rate)
+
+        # stochastic depth
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
+
+        # build Residual Swin Transformer blocks (RSTB)
+        self.layers = nn.ModuleList()
+        for i_layer in range(self.num_layers):
+            layer = RMFB(dim=embed_dim,
+                         depth=depths[i_layer],
+                         drop=drop_rate,
+                         drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],  # no impact on SR results
+                         norm_layer=norm_layer,
+                         token_mixer=token_mixers[i_layer],
+                         mlp=mlps[i_layer],
+                         resi_connection=resi_connection,
+                         layer_scale_init_value=layer_scale_init_values[i_layer],
+                         res_scale_init_value=res_scale_init_values[i_layer]
+                         )
+            self.layers.append(layer)
+        self.norm = norm_layer(self.num_features)
+
+        # build the last conv layer in deep feature extraction
+        if resi_connection == '1conv':
+            self.conv_after_body = nn.Conv2d(embed_dim, embed_dim, 3, 1, 1)
+        elif resi_connection == '3conv':
+            # to save parameters and memory
+            self.conv_after_body = nn.Sequential(nn.Conv2d(embed_dim, embed_dim // 4, 3, 1, 1),
+                                                 nn.LeakyReLU(negative_slope=0.2, inplace=True),
+                                                 nn.Conv2d(embed_dim // 4, embed_dim // 4, 1, 1, 0),
+                                                 nn.LeakyReLU(negative_slope=0.2, inplace=True),
+                                                 nn.Conv2d(embed_dim // 4, embed_dim, 3, 1, 1))
+
+        #####################################################################################################
+        ################################ 3, high quality image reconstruction ################################
+        # if self.upsampler == 'pixelshuffle':
+        #     # for classical SR
+        #     self.conv_before_upsample = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
+        #                                               nn.LeakyReLU(inplace=True))
+        #     self.upsample = Upsample(upscale, num_feat)
+        #     self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
+        # elif self.upsampler == 'pixelshuffledirect':
+        #     # for lightweight SR (to save parameters)
+        #     self.upsample = UpsampleOneStep(upscale, embed_dim, num_out_ch,
+        #                                     (patches_resolution[0], patches_resolution[1]))
+        # elif self.upsampler == 'nearest+conv':
+        #     # for real-world SR (less artifacts)
+        #     assert self.upscale == 4, 'only support x4 now.'
+        #     self.conv_before_upsample = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
+        #                                               nn.LeakyReLU(inplace=True))
+        #     self.conv_up1 = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+        #     self.conv_up2 = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+        #     self.conv_hr = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+        #     self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
+        #     self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+        # else:
+        #     # for image denoising and JPEG compression artifact reduction
+        #     self.conv_last = nn.Conv2d(embed_dim, num_out_ch, 3, 1, 1)
+
+        # for classical SR
+        self.conv_before_upsample = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
+                                                    nn.LeakyReLU(inplace=True))
+        self.upsample = Upsample(scale, num_feat)
+        self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
+
+        self.apply(self._init_weights)
+
+    # def _init_weights(self, m):
+    #     if isinstance(m, nn.Linear):
+    #         trunc_normal_(m.weight, std=.02)
+    #         if isinstance(m, nn.Linear) and m.bias is not None:
+    #             nn.init.constant_(m.bias, 0)
+    #     elif isinstance(m, nn.LayerNorm):
+    #         nn.init.constant_(m.bias, 0)
+    #         nn.init.constant_(m.weight, 1.0)
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.Linear)):
+            trunc_normal_(m.weight, std=.02)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return {'absolute_pos_embed'}
+
+    @torch.jit.ignore
+    def no_weight_decay_keywords(self):
+        return {'relative_position_bias_table'}
+
+    def forward_features(self, x):
+        x = self.patch_embed(x)
+        x = self.pos_drop(x)
+
+        for layer in self.layers:
+            x = layer(x)
+
+        x = self.norm(x)  # B L C
+        x = self.patch_unembed(x)
+
+        return x
+    
+    def check_image_size(self, x):
+        _, _, h, w = x.size()
+        mod_pad_h = (16 - h % 16) % 16
+        mod_pad_w = (16 - w % 16) % 16
+        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
+        return x
+
+    def forward(self, x, x_base=None):
+        # H, W = x.shape[2:]
+        # x = self.check_image_size(x)
+
+        # self.mean = self.mean.type_as(x)
+        # x = (x - self.mean) * self.img_range
+
+        b, t, c, h, w = x.size()
+        # assert t == 14, 'Frame should be 14!'
+        # assert c == 3, 'In channels should be 3!'
+
+        # if x_base is None:
+        #     x_base = x[:, 0, :, :, :].contiguous()
+        #     x_base_scale = self.scale
+        # else:
+        #     x_base_scale = self.scale // 2
+        
+        x_feat_head = self.head(self.check_image_size(x.view(-1, c, h, w)))  # [b*t, dim, h, w]
+        x_feat_body = self.body(x_feat_head)  # [b*t, dim, h, w]
+        _, _, nh, nw = x_feat_body.shape
+        feat = x_feat_body.view(b, t, -1, nh, nw)   # [b, t, dim, h, w]
+        fusion_feat = self.fusion(feat)   # fusion feat [b, dim, h, w]
+
+        fusion_feat = self.upsample_prev(fusion_feat)
+
+        # if self.upsampler == 'pixelshuffle':
+        #     # for classical SR
+        #     x = self.conv_first(x)
+        #     x = self.conv_after_body(self.forward_features(x)) + x
+        #     x = self.conv_before_upsample(x)
+        #     x = self.conv_last(self.upsample(x))
+        # elif self.upsampler == 'pixelshuffledirect':
+        #     # for lightweight SR
+        #     x = self.conv_first(x)
+        #     x = self.conv_after_body(self.forward_features(x)) + x
+        #     x = self.upsample(x)
+        # elif self.upsampler == 'nearest+conv':
+        #     # for real-world SR
+        #     x = self.conv_first(x)
+        #     x = self.conv_after_body(self.forward_features(x)) + x
+        #     x = self.conv_before_upsample(x)
+        #     x = self.lrelu(self.conv_up1(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
+        #     x = self.lrelu(self.conv_up2(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
+        #     x = self.conv_last(self.lrelu(self.conv_hr(x)))
+        # else:
+        #     # for image denoising and JPEG compression artifact reduction
+        #     x_first = self.conv_first(x)
+        #     res = self.conv_after_body(self.forward_features(x_first)) + x_first
+        #     x = x + self.conv_last(res)
+        
+        y = self.conv_after_body(self.forward_features(fusion_feat)) + fusion_feat
+        y = self.conv_before_upsample(y)
+        y = self.conv_last(self.upsample(y))
+
+        # base = F.interpolate(x_base, scale_factor=x_base_scale, mode='bilinear', align_corners=False)
+
+        # x = x / self.img_range + self.mean
+
+        # return x[:, :, :H*self.upscale, :W*self.upscale]
+        # output = y + base
+        # return output
+        return y[:, :, :h*self.scale*2, :w*self.scale*2]
+
+
 if __name__ == '__main__':
     from fvcore.nn import flop_count_table, FlopCountAnalysis, ActivationCountAnalysis    
     x = torch.randn(1, 14, 3, 160, 160)

@@ -28,6 +28,9 @@ def get_model(arch, dim, burst_size, in_channel, scale):
         from .unet import UNet_DN
         model = UNet_DN(dim=dim, burst_size=burst_size,
                      in_channel=in_channel, scale=scale, conv_block=arch[8:])
+    elif arch.startswith('quadraw_swinir'):
+        from .swinir import SwinIR_QuadRAW
+        model = SwinIR_QuadRAW(embed_dim=dim, burst_size=burst_size, in_chans=in_channel, scale=scale)
     elif arch.startswith('swinir'):
         from .swinir import SwinIR
         model = SwinIR(embed_dim=dim, burst_size=burst_size, in_chans=in_channel, scale=scale)
