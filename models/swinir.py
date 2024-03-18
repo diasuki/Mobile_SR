@@ -1417,7 +1417,7 @@ class SwinIR_QuadRAW_NoFusion(nn.Module):
         # return x[:, :, :H*self.upscale, :W*self.upscale]
         # output = y + base
         # return output
-        return y[:, :, :h*self.scale*2, :w*self.scale*2]
+        return y
 
 
 class SwinIR_QuadRAW(nn.Module):
